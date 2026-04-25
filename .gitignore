@@ -1,0 +1,16 @@
+node_modules/
+.next/
+firebase-debug.log
+.env.local
+.env*.local
+firebase-admin.json
+worker/env.example
+worker/worker_relatorios.py
+autogen-replicator.sh
+scripts/set_secrets.sh
+.env
+.env.*
+node_modules/
+.next/
+dist/
+build/

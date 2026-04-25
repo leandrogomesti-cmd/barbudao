@@ -1,0 +1,151 @@
+# ==============================================================================
+# TEMPLATE DE CONFIGURAÇÃO BARBEARIA
+# ==============================================================================
+# Copie este arquivo para input/seu_cliente.yaml e preencha os valores
+# Deixe em branco os campos que não deseja usar
+# ==============================================================================
+
+# [OBRIGATÓRIO] Nome da barbearia/cliente
+cliente_nome: "Barbearia Exemplo"
+
+# [OBRIGATÓRIO] URL da logo (PNG com fundo transparente, mín 512x512)
+logo_url: "https://cdn.example.com/logo.png"
+
+# [OPCIONAL] Cores customizadas
+cores:
+  primaria: "#1F2937"      # Cinza escuro (padrão)
+  secundaria: "#3B82F6"    # Azul (padrão)
+
+# ==============================================================================
+# BANCO DE DADOS — SUPABASE (Obrigatório)
+# ==============================================================================
+# Obter em: supabase.com/dashboard → [Seu Projeto] → Settings → API
+
+supabase:
+  # URL do projeto Supabase
+  url: "https://xxxxx.supabase.co"
+
+  # Service Role Key (chave privada, usar apenas no servidor)
+  # ⚠️ NUNCA commitir em produção — usar variáveis de ambiente
+  service_role_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IxxxeHgiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNzA5MDAwMDAwLCJleHAiOjE3NzIwNzIwMDB9.xxxxx"
+
+  # Anon Key (chave pública, usar no frontend)
+  anon_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IxxxeHgiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwOTAwMDAwMCwiZXhwIjoxNzcyMDcyMDAwfQ.xxxxx"
+
+# ==============================================================================
+# AUTENTICAÇÃO — FIREBASE (Obrigatório)
+# ==============================================================================
+# Obter em: console.firebase.google.com → [Seu Projeto] → Settings → General
+
+firebase:
+  # ID do projeto Firebase
+  project_id: "barbearia-exemplo-prod"
+
+  # Web API Key
+  web_api_key: "AIzaSyACMe3-tWotnrSt0Zo7Q4Yw5M9xPzABCDEF"
+
+  # Auth Domain
+  auth_domain: "barbearia-exemplo-prod.firebaseapp.com"
+
+# ==============================================================================
+# AUTOMAÇÕES — N8N (Opcional)
+# ==============================================================================
+# Deixar em branco se não usar automações N8N
+# Webhook para: Agendamentos, Lembretes, Follow-ups
+
+n8n:
+  # URL do webhook N8N para salvar agendamentos
+  webhook_url: "https://n8n.example.com/webhook/salvar_agendamento_banco"
+
+  # API Key para autenticação
+  api_key: "n8n_api_key_xxxxx"
+
+# ==============================================================================
+# CHAT — CHATWOOT (Opcional)
+# ==============================================================================
+# Deixar em branco se não usar WhatsApp/Chatwoot
+# Inbox ID: Chatwoot → Settings → Channels → WhatsApp → copiar ID
+
+chatwoot:
+  # URL do servidor Chatwoot
+  url: "https://chatwoot.example.com"
+
+  # ID da conta (geralmente 1 para primeira conta)
+  account_id: 1
+
+  # Token de acesso (gerado em: Settings → Access Tokens)
+  api_token: "token_admin_xxxxx_xxxxx_xxxxx"
+
+  # ID do Inbox WhatsApp
+  inbox_id: 158
+
+# ==============================================================================
+# PAGAMENTOS — PAGAR.ME (Opcional)
+# ==============================================================================
+# Deixar em branco se não usar pagamentos PIX
+# Obter em: dashboard.pagar.me → Settings → API Keys
+
+pagarme:
+  # Chave secreta LIVE (produção)
+  # ⚠️ NUNCA commitir em produção
+  live_key: "sk_live_xxxxxxxx"
+
+  # Secret para validar webhooks
+  # Obter em: Pagar.me → Webhooks → Configurar
+  webhook_secret: "whsec_xxxxxxxx"
+
+# ==============================================================================
+# DEPLOY E INTEGRAÇÕES (Opcional)
+# ==============================================================================
+
+deploy:
+  # Gerar APK Android assinado
+  # Requer: Java 17+, Android SDK, keystore
+  gerar_apk: false
+
+  # Firebase Project para auto-deploy em App Hosting
+  # Deixar em branco para deploy manual
+  firebase_project: "barbearia-exemplo-prod"
+
+  # Repositório GitHub para push automático
+  # Deixar em branco para não fazer push
+  github_repo: "https://github.com/example/barbearia-clone"
+
+  # Criar usuários de teste (admin, profissional, recepção)
+  criar_usuarios_teste: true
+
+# ==============================================================================
+# EXEMPLO COMPLETO (Descomente para usar)
+# ==============================================================================
+# cliente_nome: "Barbearia São Paulo"
+# logo_url: "https://cdn.barberiasp.com.br/logo.png"
+#
+# cores:
+#   primaria: "#1F2937"
+#   secundaria: "#EF4444"
+#
+# supabase:
+#   url: "https://akjsfhkajsdf.supabase.co"
+#   service_role_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+#   anon_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+#
+# firebase:
+#   project_id: "barbearia-sp-prod"
+#   web_api_key: "AIzaSyBcDeFgHiJkLmNoPqRsTuVwXyZ"
+#   auth_domain: "barbearia-sp-prod.firebaseapp.com"
+#
+# chatwoot:
+#   url: "https://chatwoot.barbearia.com.br"
+#   account_id: 1
+#   api_token: "zAl8HLnmr5P8QjXx9KhJm8NoPqRsT"
+#   inbox_id: 99
+#
+# pagarme:
+#   live_key: "sk_live_xxxxx"
+#   webhook_secret: "whsec_xxxxx"
+#
+# deploy:
+#   firebase_project: "barbearia-sp-prod"
+#   github_repo: "https://github.com/barbearia/sistema-sp"
+#   criar_usuarios_teste: true
+

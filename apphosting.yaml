@@ -1,0 +1,65 @@
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+# As variáveis abaixo são gerenciadas pelo painel do Firebase App Hosting.
+# Os valores foram removidos do YAML e definidos diretamente no painel.
+
+instance: 'barbearia'
+runConfig:
+  maxInstances: 1
+  env:
+    # --- App API Key (compartilhada com N8N) ---
+    - variable: APP_API_KEY
+      availability:
+        - RUNTIME
+
+    # --- Supabase ---
+    - variable: SUPABASE_URL
+      availability: [BUILD, RUNTIME]
+    - variable: SUPABASE_KEY
+      availability: [BUILD, RUNTIME]
+    - variable: SUPABASE_ANON_KEY
+      availability: [BUILD, RUNTIME]
+    - variable: NEXT_PUBLIC_SUPABASE_URL
+      availability: [BUILD, RUNTIME]
+    - variable: SUPABASE_SERVICE_ROLE_KEY
+      availability: [BUILD, RUNTIME]
+    - variable: NEXT_PUBLIC_SUPABASE_ANON_KEY
+      availability: [BUILD, RUNTIME]
+
+    # --- Chatwoot ---
+    - variable: CHATWOOT_URL
+      availability: [BUILD, RUNTIME]
+    - variable: CHATWOOT_BASE_URL
+      availability: [BUILD, RUNTIME]
+    - variable: CHATWOOT_ACCOUNT_ID
+      availability: [BUILD, RUNTIME]
+    - variable: CHATWOOT_API_TOKEN
+      availability: [BUILD, RUNTIME]
+    - variable: CHATWOOT_INBOX_ID
+      availability: [BUILD, RUNTIME]
+
+    # --- Google Gemini / Genkit ---
+    - variable: GOOGLE_API_KEY
+      availability: [RUNTIME]
+    - variable: GEMINI_API_KEY
+      availability: [RUNTIME]
+
+    # --- Apify — Prospecção ---
+    - variable: APIFY_TOKEN
+      availability: [RUNTIME]
+    - variable: APIFY_USER_ID
+      availability: [RUNTIME]
+
+    # --- N8N / Outros ---
+    - variable: N8N_URL
+      availability: [BUILD, RUNTIME]
+    - variable: PAGARME_SECRET_KEY_LIVE
+      availability: [RUNTIME]
+    - variable: PAGARME_WEBHOOK_SECRET
+      availability: [RUNTIME]
+
+    # --- WhatsApp ---
+    - variable: WHATSAPP_DEST_NUMBER
+      availability: [BUILD, RUNTIME]
+    - variable: DEV_PHONE
+      availability: [BUILD, RUNTIME]

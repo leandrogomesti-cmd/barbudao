@@ -1,0 +1,62 @@
+{
+  "name": "03. Error Handling - Dead Letter",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger-1",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://chatai.agenticx.ia.br:3002/api/v1/accounts/1/conversations/1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "kkTHN6oueANaV1pMu4DNoPRp"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"⚠️ ERRO CRÍTICO NO N8N\\n\\nWorkflow: {{$json.workflow.name}}\\nNó onde falhou: {{$json.execution.lastNodeExecuted}}\\nErro: {{$json.execution.error.message}}\\n\\nVerifique manualmente na agenda e no banco!\",\n  \"message_type\": \"outgoing\"\n}",
+        "options": {}
+      },
+      "id": "chatwoot-alert-1",
+      "name": "Alertar no Chatwoot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        500,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Alertar no Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f78d38e2-f79a-4cce-abcd-3e5f4a7c8811"
+}

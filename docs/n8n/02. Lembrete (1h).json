@@ -1,0 +1,355 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "height": 816,
+        "width": 1984
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "83914b1f-7d35-4342-8214-555609334ba4",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        112,
+        352
+      ],
+      "id": "145a956a-7496-445a-ba86-677ce21f6296",
+      "name": "Gatilho Lembrete (10 min)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM public.controle_atendimentos\nWHERE LOWER(status_agendamento) NOT IN ('cancelado','bloqueio','não apareceu','nao apareceu')\n  AND lembrete_enviado_em IS NULL\n  AND inicio_agendado::timestamp BETWEEN NOW() + INTERVAL '60 minutes'\n                                      AND NOW() + INTERVAL '70 minutes';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        336,
+        352
+      ],
+      "id": "d5161eae-c844-418e-ba7f-837138962833",
+      "name": "Buscar Clientes (1h antes)",
+      "credentials": {
+        "postgres": {
+          "id": "dxKiCg78jqbypAcM",
+          "name": "Postgres account - Clientes"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        544,
+        352
+      ],
+      "id": "febb720b-4598-4b41-a11a-f094f51f52f2",
+      "name": "Loop Clientes"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "mensagem",
+              "value": "=Fala {{ $json.nome_cliente }}, tudo beleza? Passando pra lembrar do seu horário hoje às {{ DateTime.fromISO($json.inicio_agendado).setZone('America/Sao_Paulo').toFormat('HH:mm') }} com {{ $json.profissional.toLowerCase().includes('qualquer') ? 'a nossa equipe' : 'o ' + $json.profissional }}. Podemos confirmar? (Responda SIM ou NÃO)",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "url_chatwoot",
+              "value": "={{ $env.CHATWOOT_BASE_URL }}",
+              "type": "string"
+            },
+            {
+              "id": "3",
+              "name": "id_conta",
+              "value": "1",
+              "type": "string"
+            },
+            {
+              "id": "4",
+              "name": "id_conversa",
+              "value": "={{ $json.id_conversa_chatwoot }}",
+              "type": "string"
+            },
+            {
+              "id": "5",
+              "name": "telefone",
+              "value": "={{ $json.telefone }}",
+              "type": "string"
+            },
+            {
+              "id": "6",
+              "name": "id_evento_google",
+              "value": "={{ $json.id_evento_google }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        320
+      ],
+      "id": "7882ca83-68aa-4714-a6a5-8ef0487cd99e",
+      "name": "Preparar Mensagem"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url_chatwoot }}/api/v1/accounts/{{ $json.id_conta }}/conversations/{{ $json.id_conversa }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "chatwootApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"{{ $json.mensagem }}\",\n  \"message_type\": \"outgoing\",\n  \"private\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1024,
+        320
+      ],
+      "id": "3c499c2f-d38b-4fec-a60e-a8f9d521cc37",
+      "name": "Enviar texto",
+      "credentials": {
+        "chatwootApi": {
+          "id": "vX4RCLBsooZpPuCk",
+          "name": "ChatWoot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "n8n_historico_mensagens",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $('Preparar Mensagem').item.json.telefone }}",
+            "message": "={ \"type\": \"ai\", \"content\": \"{{ $('Preparar Mensagem').item.json.mensagem }}\" }",
+            "id": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1232,
+        320
+      ],
+      "id": "9cdaf718-38a9-45a1-a089-9ffec16efad1",
+      "name": "Salvar Memória IA",
+      "credentials": {
+        "postgres": {
+          "id": "dxKiCg78jqbypAcM",
+          "name": "Postgres account - Clientes"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.controle_atendimentos \nSET lembrete_enviado_em = NOW() \nWHERE id_evento_google = '{{ $('Preparar Mensagem').item.json.id_evento_google }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        320
+      ],
+      "id": "7d914d49-e4df-4608-822e-593cb211074d",
+      "name": "Marcar como Enviado",
+      "credentials": {
+        "postgres": {
+          "id": "dxKiCg78jqbypAcM",
+          "name": "Postgres account - Clientes"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gatilho Lembrete (10 min)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Clientes (1h antes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Clientes (1h antes)": {
+      "main": [
+        [
+          {
+            "node": "Loop Clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Clientes": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Preparar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar texto": {
+      "main": [
+        [
+          {
+            "node": "Salvar Memória IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Memória IA": {
+      "main": [
+        [
+          {
+            "node": "Marcar como Enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar como Enviado": {
+      "main": [
+        [
+          {
+            "node": "Loop Clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Gatilho Lembrete (10 min)": [
+      {
+        "timestamp": "2026-03-24T11:00:00.005-04:00",
+        "Readable date": "March 24th 2026, 11:00:00 am",
+        "Readable time": "11:00:00 am",
+        "Day of week": "Tuesday",
+        "Year": "2026",
+        "Month": "March",
+        "Day of month": "24",
+        "Hour": "11",
+        "Minute": "00",
+        "Second": "00",
+        "Timezone": "America/New_York (UTC-04:00)"
+      }
+    ]
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "bc9e8b558f6122d04c2daa17a3fa55b8a1c6e17ecb7a80552c27b5390c9f295a"
+  }
+}

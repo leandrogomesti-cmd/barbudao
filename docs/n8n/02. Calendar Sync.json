@@ -1,0 +1,79 @@
+{
+  "name": "02. Google Calendar Two-Way Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5
+            }
+          ]
+        },
+        "calendar": {
+          "__rl": true,
+          "value": "primary",
+          "mode": "list",
+          "cachedResultName": "barbeariadelpierroitaici@gmail.com"
+        },
+        "triggerOn": "eventUpdated",
+        "options": {}
+      },
+      "id": "calendar-trigger-1",
+      "name": "Google Calendar Trigger",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "sXS0VOc9HRLRRMea",
+          "name": "Google account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.controle_atendimentos SET inicio_agendado = '{{$json.start.dateTime}}', fim_agendado = '{{$json.end.dateTime}}', status_agendamento = '{{$json.status === \"cancelled\" ? \"Cancelado\" : \"Confirmado\"}}' WHERE id_evento_google = '{{$json.id}}';",
+        "options": {}
+      },
+      "id": "postgres-sync-1",
+      "name": "Atualiza Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dxKiCg78jqbypAcM",
+          "name": "Postgres account - Clientes"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Calendar Trigger": {
+      "main": [
+        [
+          {
+            "node": "Atualiza Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "eb25f23d-8e4a-4a8b-afbb-cbb8784d1bc4"
+}

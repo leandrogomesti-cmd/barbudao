@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(ls:*)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_URL --backend barbearia)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_ACCOUNT_ID --backend barbearia)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_API_TOKEN --backend barbearia)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_INBOX_ID --backend barbearia)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_URL)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_ACCOUNT_ID)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_API_TOKEN)",
+      "Bash(firebase apphosting:secrets:access CHATWOOT_INBOX_ID)",
+      "Bash(curl:*)",
+      "Bash(printf 'https://atendimento.starbrite.com.br')",
+      "Bash(firebase apphosting:secrets:set CHATWOOT_URL --data-file -)",
+      "Bash(printf 'https://atendimento.starbrite.com.br\\\\nY\\\\n')",
+      "Bash(firebase apphosting:secrets:set CHATWOOT_ACCOUNT_ID --data-file -)",
+      "Bash(firebase apphosting:secrets:set CHATWOOT_ACCOUNT_ID --data-file /tmp/cw_account --force)",
+      "Bash(rm /tmp/cw_account)",
+      "Bash(python3 -m json.tool)",
+      "Bash(gcloud secrets:*)",
+      "Bash(firebase apphosting:secrets:grantaccess CHATWOOT_URL)",
+      "Bash(firebase apphosting:secrets:grantaccess CHATWOOT_ACCOUNT_ID)",
+      "Bash(firebase apphosting:secrets:grantaccess --help)",
+      "Bash(firebase:*)",
+      "Bash(npx firebase-tools@latest apphosting:secrets:grantaccess CHATWOOT_INBOX_ID,CHATWOOT_API_TOKEN --backend barbearia)",
+      "Bash(export NVM_DIR=\"$HOME/.nvm\")",
+      "Bash(source \"$NVM_DIR/nvm.sh\")",
+      "Bash(nvm use:*)",
+      "Bash(grep -l \"export.*function\" /home/diego/Documentos/Projetos/DBL/Workana/Leandro/Barbearia/src/lib/actions*.ts)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('dependencies',{}\\).get\\('zod','NOT INSTALLED'\\)\\)\")"
+    ]
+  }
+}
