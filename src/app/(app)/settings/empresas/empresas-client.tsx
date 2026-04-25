@@ -53,6 +53,8 @@ export function EmpresasClient({ initialEmpresas }: EmpresasClientProps) {
     cnpj: '',
     telefone: '',
     endereco: '',
+    bairro: '',
+    cidade: '',
     ativo: true,
   });
 
@@ -83,6 +85,8 @@ export function EmpresasClient({ initialEmpresas }: EmpresasClientProps) {
       cnpj: '',
       telefone: '',
       endereco: '',
+      bairro: '',
+      cidade: '',
       ativo: true,
     });
     setIsCreateDialogOpen(true);
@@ -198,9 +202,15 @@ export function EmpresasClient({ initialEmpresas }: EmpresasClientProps) {
                   </TableCell>
                   <TableCell>
                     <div className="font-semibold">{empresa.nome_fantasia}</div>
-                    <div className="text-xs text-muted-foreground line-clamp-1 max-w-[300px]">
-                      {empresa.endereco || 'Sem endereço cadastrado'}
-                    </div>
+                    {(empresa.bairro || empresa.cidade) ? (
+                      <div className="text-xs text-muted-foreground line-clamp-1 max-w-[300px]">
+                        {[empresa.bairro, empresa.cidade].filter(Boolean).join(' · ')}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground line-clamp-1 max-w-[300px]">
+                        {empresa.endereco || 'Sem endereço cadastrado'}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {empresa.telefone || '-'}
@@ -324,6 +334,28 @@ export function EmpresasClient({ initialEmpresas }: EmpresasClientProps) {
                 value={formData.endereco || ''}
                 onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
                 placeholder="Ex: Av Coronel Antônio Estanislau do Amaral, 310"
+                className="bg-muted/30"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="bairro" className="text-sm font-medium">Bairro (exibido na IA)</Label>
+              <Input
+                id="bairro"
+                value={formData.bairro || ''}
+                onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+                placeholder="Ex: Mansões Santo Antônio"
+                className="bg-muted/30"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cidade" className="text-sm font-medium">Cidade (exibida na IA)</Label>
+              <Input
+                id="cidade"
+                value={formData.cidade || ''}
+                onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+                placeholder="Ex: Campinas"
                 className="bg-muted/30"
               />
             </div>

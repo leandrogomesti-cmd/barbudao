@@ -70,6 +70,8 @@ export interface EmpresaERP {
   store_id?: string;
   telefone?: string;
   endereco?: string;
+  bairro?: string;
+  cidade?: string;
   ativo: boolean;
   created_at: string;
 }
