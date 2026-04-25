@@ -13,7 +13,7 @@ export async function searchContactsForAgenda(query: string): Promise<{ nome: st
     .from('contatos_erp')
     .select('nome, telefone')
     .or(`nome.ilike.%${query}%,telefone.ilike.%${query}%`)
-    .neq('ativo', false)
+    .or('ativo.is.null,ativo.eq.true')
     .order('nome')
     .limit(10);
   return (data ?? []) as { nome: string; telefone: string }[];
@@ -27,7 +27,7 @@ function normalizeAppointment(row: any): Appointment {
   };
 }
 
-export async function getAppointments(date?: Date, storeId?: string, professionalName?: string): Promise<Appointment[]> {
+export async function getAppointments(date?: Date, storeId?: string, professionalName?: string, professionalId?: string): Promise<Appointment[]> {
   let query = supabase
     .from('controle_atendimentos')
     .select('*');
@@ -47,8 +47,13 @@ export async function getAppointments(date?: Date, storeId?: string, professiona
     query = query.eq('unidade', storeId);
   }
 
-  if (professionalName) {
+  if (professionalName && professionalId) {
+    // OR: casa por nome OU por ID — tolerante a divergências de nomenclatura
+    query = query.or(`profissional.eq.${professionalName},profissional_id.eq.${professionalId}`);
+  } else if (professionalName) {
     query = query.eq('profissional', professionalName);
+  } else if (professionalId) {
+    query = query.eq('profissional_id', professionalId);
   }
 
   const { data, error } = await query.order('inicio_agendado', { ascending: true });

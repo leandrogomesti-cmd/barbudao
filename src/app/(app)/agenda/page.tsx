@@ -34,14 +34,18 @@ export default async function AgendaPage(props: { searchParams: Promise<{ unit?:
     return redirect('/login');
   }
 
-  // URL param ?unit= tem prioridade; fallback para unidade do profissional
+  // URL param ?unit= tem prioridade; fallback para unidade de RECEPCAO
   const unitFromUrl = searchParams.unit || undefined;
-  const storeId = (perfil === 'PROFISSIONAL' || perfil === 'RECEPCAO')
+  const storeId = perfil === 'RECEPCAO'
     ? (currentStaff?.unidade_padrao ?? undefined)
-    : unitFromUrl;
+    : (perfil === 'PROFISSIONAL' ? undefined : unitFromUrl);
+
+  // Para profissional: filtra por nome E id (OR) — tolerante a divergências de nome no banco
+  const professionalNameFilter = perfil === 'PROFISSIONAL' ? (currentStaff?.nome ?? undefined) : undefined;
+  const professionalIdFilter = perfil === 'PROFISSIONAL' ? (currentStaff?.id ?? undefined) : undefined;
 
   const [appointments, staff, unitsRes, services] = await Promise.all([
-    getAppointments(new Date(), storeId),
+    getAppointments(new Date(), storeId, professionalNameFilter, professionalIdFilter),
     getStaffMembers(),
     supabase.from('empresas_erp').select('id_loja, nome_fantasia').order('nome_fantasia'),
     getServices(),

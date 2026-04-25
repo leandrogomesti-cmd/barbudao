@@ -118,16 +118,19 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
     return allActive;
   }, [staff, perfil, currentStaff, selectedUnit]);
 
-  // Nomes dos profissionais visíveis (para detectar agendamentos órfãos)
+  // Mapa de IDs e nomes dos profissionais visíveis (detecta agendamentos órfãos)
   const visibleStaffNames = useMemo(() => new Set(visibleStaff.map(s => s.nome)), [visibleStaff]);
+  const visibleStaffIds = useMemo(() => new Set(visibleStaff.map(s => s.id).filter(Boolean)), [visibleStaff]);
 
   // Agendamentos sem profissional definido OU cujo profissional não tem coluna visível
+  // Exclui os que já fazem match por profissional_id (evita duplicação)
   const indiferenteAppointments = useMemo(() =>
     appointments.filter(a =>
       isSameDay(parseISO(a.inicio_agendado), selectedDate) &&
-      (!a.profissional || a.profissional === 'Indiferente' || !visibleStaffNames.has(a.profissional)) &&
-      a.status_agendamento !== 'Fila de Espera'
-    ), [appointments, selectedDate, visibleStaffNames]);
+      a.status_agendamento !== 'Fila de Espera' &&
+      !visibleStaffNames.has(a.profissional) &&
+      !(a.profissional_id && visibleStaffIds.has(a.profissional_id))
+    ), [appointments, selectedDate, visibleStaffNames, visibleStaffIds]);
 
   const timeSlots = useMemo(() => {
     const slots = [];
@@ -384,10 +387,16 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
   };
 
   const fetchAppointments = useCallback(async (date: Date, unit: string, silent = false) => {
-    const storeId = (perfil === 'PROFISSIONAL' || perfil === 'RECEPCAO')
-      ? (currentStaff?.unidade_padrao ?? undefined)
-      : (unit || undefined);
-    return getAppointments(date, storeId);
+    // PROFISSIONAL: filtra por nome E id (OR) — tolerante a divergências de nome no banco
+    if (perfil === 'PROFISSIONAL' && currentStaff) {
+      return getAppointments(date, undefined, currentStaff.nome ?? undefined, currentStaff.id ?? undefined);
+    }
+    // RECEPCAO: filtra pela unidade do profissional logado
+    if (perfil === 'RECEPCAO') {
+      return getAppointments(date, currentStaff?.unidade_padrao ?? undefined);
+    }
+    // ADMIN / GERENTE: filtra pela unidade selecionada no filtro (ou todas)
+    return getAppointments(date, unit || undefined);
   }, [perfil, currentStaff]);
 
   const handleSync = async (unitOverride?: string, silent = false) => {
@@ -772,8 +781,12 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
 
             {/* Professional Columns */}
             {visibleStaff.map(member => {
+              // Matches by nome OR profissional_id (tolerates name mismatches between N8N and cadastro)
+              const matchesMember = (a: Appointment) =>
+                a.profissional === member.nome ||
+                (!!a.profissional_id && a.profissional_id === member.id);
               const memberAppts = appointments.filter(a =>
-                a.profissional === member.nome && isSameDay(parseISO(a.inicio_agendado), selectedDate)
+                matchesMember(a) && isSameDay(parseISO(a.inicio_agendado), selectedDate)
               );
               const memberFinalized = memberAppts.filter(a => a.status_agendamento === 'Finalizado').length;
               return (
@@ -792,7 +805,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
                 {timeSlots.map(slot => {
                   const droppableId = `${member.nome}|${slot}`;
                   const appointmentsInSlot = appointments.filter(a =>
-                    a.profissional === member.nome &&
+                    matchesMember(a) &&
                     format(parseISO(a.inicio_agendado), 'HH:mm') === slot &&
                     isSameDay(parseISO(a.inicio_agendado), selectedDate)
                   );
