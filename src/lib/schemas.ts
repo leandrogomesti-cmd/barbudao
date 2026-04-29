@@ -75,6 +75,43 @@ export const AppointmentSchema = z.object({
 
 export type AppointmentInput = z.infer<typeof AppointmentSchema>;
 
+// ─── Comissão por Serviço ─────────────────────────────────
+export const ProfissionalServicoComissaoSchema = z.object({
+    profissional_id: z.string().uuid(),
+    servico_id: z.string().uuid(),
+    unidade_id: z.string().min(1),
+    comissao_percentual: z.number().min(0).max(100),
+});
+
+export type ProfissionalServicoComissaoInput = z.infer<typeof ProfissionalServicoComissaoSchema>;
+
+// ─── Produto por Unidade ──────────────────────────────────
+export const ProdutoUnidadeSchema = z.object({
+    produto_id: z.string().uuid(),
+    unidade_id: z.string().min(1),
+    preco: z.number().nonnegative('Preço não pode ser negativo'),
+    comissao_percentual: z.number().min(0).max(100),
+    ativo: z.boolean().optional().default(true),
+});
+
+export type ProdutoUnidadeInput = z.infer<typeof ProdutoUnidadeSchema>;
+
+// ─── Venda de Produto ─────────────────────────────────────
+export const VendaProdutoSchema = z.object({
+    produto_id: z.string().uuid(),
+    profissional_id: z.string().uuid().optional().nullable(),
+    cliente_id: z.string().uuid().optional().nullable(),
+    unidade_id: z.string().optional().nullable(),
+    nome_cliente: z.string().optional().nullable(),
+    quantidade: z.number().positive('Quantidade deve ser maior que zero'),
+    preco_unitario: z.number().nonnegative(),
+    comissao_percentual_aplicada: z.number().min(0).max(100),
+    data_venda: z.string().min(1),
+    observacoes: z.string().optional().nullable(),
+});
+
+export type VendaProdutoInput = z.infer<typeof VendaProdutoSchema>;
+
 // ─── Helper ──────────────────────────────────────────────
 export function parseSchema<T>(schema: z.ZodSchema<T>, data: unknown): { success: true; data: T } | { success: false; message: string } {
     const result = schema.safeParse(data);

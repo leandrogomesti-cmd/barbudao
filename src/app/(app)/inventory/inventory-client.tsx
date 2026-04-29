@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Product, ProductCategory, StockMovement } from '@/lib/types/business';
+import { useState, useMemo, useCallback } from 'react';
+import { Product, ProductCategory, StockMovement, ProdutoUnidade, VendaProduto } from '@/lib/types/business';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,6 +35,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Search,
   ChevronUp,
@@ -58,9 +59,13 @@ import {
   TrendingUp,
   TrendingDown,
   RefreshCw,
-  Wrench
+  Wrench,
+  Percent,
+  ShoppingCart,
+  Store,
+  X,
 } from 'lucide-react';
-import { createProduct, updateProduct, deleteProduct, createStockMovement, getStockMovements } from '@/lib/actions-business';
+import { createProduct, updateProduct, deleteProduct, createStockMovement, getStockMovements, getProdutosUnidade, upsertProdutoUnidade, deleteProdutoUnidade, createVendaProduto } from '@/lib/actions-business';
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -69,12 +74,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 interface InventoryClientProps {
   initialProducts: Product[];
   categories: ProductCategory[];
+  units: string[];
+  staff: Array<{ id: string; nome: string }>;
 }
 
 type SortField = 'nome' | 'estoque_atual' | 'fabricante';
 type SortOrder = 'asc' | 'desc' | null;
 
-export function InventoryClient({ initialProducts, categories }: InventoryClientProps) {
+export function InventoryClient({ initialProducts, categories, units, staff }: InventoryClientProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>(null);
@@ -99,6 +106,24 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
   const [stockHistory, setStockHistory] = useState<StockMovement[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Product-unit config state
+  const [produtosUnidade, setProdutosUnidade] = useState<ProdutoUnidade[]>([]);
+  const [loadingProdUtd, setLoadingProdUtd] = useState(false);
+
+  // Sale dialog state
+  const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false);
+  const [saleProduct, setSaleProduct] = useState<Product | null>(null);
+  const [saleForm, setSaleForm] = useState({
+    profissional_id: '',
+    nome_cliente: '',
+    quantidade: 1,
+    preco_unitario: 0,
+    comissao_percentual_aplicada: 0,
+    data_venda: new Date().toISOString().split('T')[0],
+    unidade_id: '',
+    observacoes: '',
+  });
 
   const [formData, setFormData] = useState<Partial<Product>>({
     nome: '',
@@ -163,10 +188,98 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
     return sortOrder === 'asc' ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />;
   };
 
+  const loadProdutosUnidade = useCallback(async (produtoId: string) => {
+    setLoadingProdUtd(true);
+    try {
+      const results = await Promise.all(units.map(u => getProdutosUnidade(u)));
+      const allRows = results.flat().filter((r: ProdutoUnidade) => r.produto_id === produtoId);
+      setProdutosUnidade(allRows);
+    } finally {
+      setLoadingProdUtd(false);
+    }
+  }, [units]);
+
+  const handleSaveUnidadeConfig = async (row: ProdutoUnidade) => {
+    const result = await upsertProdutoUnidade(row);
+    if (result.success && result.data) {
+      setProdutosUnidade(prev => {
+        const existing = prev.findIndex(r => r.unidade_id === row.unidade_id);
+        if (existing >= 0) {
+          const updated = [...prev];
+          updated[existing] = result.data!;
+          return updated;
+        }
+        return [...prev, result.data!];
+      });
+      toast({ title: 'Salvo', description: `Configuração de ${row.unidade_id} salva.` });
+    } else if (!result.success) {
+      toast({ title: 'Erro', description: result.message, variant: 'destructive' });
+    }
+  };
+
+  const handleRemoveUnidadeConfig = async (id: string) => {
+    const result = await deleteProdutoUnidade(id);
+    if (result.success) {
+      setProdutosUnidade(prev => prev.filter(r => r.id !== id));
+    } else {
+      toast({ title: 'Erro', description: result.message, variant: 'destructive' });
+    }
+  };
+
+  const openSaleDialog = (product: Product) => {
+    setSaleProduct(product);
+    setSaleForm({
+      profissional_id: '',
+      nome_cliente: '',
+      quantidade: 1,
+      preco_unitario: product.preco_cliente || 0,
+      comissao_percentual_aplicada: 0,
+      data_venda: new Date().toISOString().split('T')[0],
+      unidade_id: '',
+      observacoes: '',
+    });
+    setIsSaleDialogOpen(true);
+  };
+
+  const handleSale = async () => {
+    if (!saleProduct?.id) return;
+    if (saleForm.quantidade <= 0) {
+      toast({ title: 'Erro', description: 'Quantidade deve ser maior que zero.', variant: 'destructive' });
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const result = await createVendaProduto({
+        produto_id: saleProduct.id,
+        profissional_id: saleForm.profissional_id || undefined,
+        nome_cliente: saleForm.nome_cliente || undefined,
+        unidade_id: saleForm.unidade_id || undefined,
+        quantidade: saleForm.quantidade,
+        preco_unitario: saleForm.preco_unitario,
+        comissao_percentual_aplicada: saleForm.comissao_percentual_aplicada,
+        data_venda: saleForm.data_venda,
+        observacoes: saleForm.observacoes || undefined,
+      });
+      if (result.success) {
+        toast({ title: 'Venda registrada!', description: `${saleProduct.nome} — ${saleForm.quantidade} unid.` });
+        setIsSaleDialogOpen(false);
+        router.refresh();
+      } else {
+        toast({ title: 'Erro', description: result.message, variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Erro', description: 'Falha ao registrar venda.', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const openEditDialog = (product: Product) => {
     setSelectedProduct(product);
     setFormData({ ...product });
+    setProdutosUnidade([]);
     setIsEditDialogOpen(true);
+    loadProdutosUnidade(product.id);
   };
 
   const openDeleteDialog = (product: Product) => {
@@ -482,6 +595,15 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-violet-600 hover:bg-violet-50"
+                            title="Registrar venda"
+                            onClick={() => openSaleDialog(product)}
+                          >
+                            <ShoppingCart className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50"
                             title="Movimentar estoque"
                             onClick={() => openMovementDialog(product)}
@@ -558,6 +680,18 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
 
           <Separator className="my-1" />
 
+          <Tabs defaultValue="dados" className="w-full">
+            {isEditDialogOpen && (
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="dados">Dados</TabsTrigger>
+                <TabsTrigger value="unidades">
+                  <Store className="h-3.5 w-3.5 mr-1.5" />
+                  Por Unidade
+                </TabsTrigger>
+              </TabsList>
+            )}
+
+          <TabsContent value="dados">
           <div className="grid gap-4 py-2 grid-cols-1 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="nome-prod" className="text-sm font-medium">Nome do Produto *</Label>
@@ -660,8 +794,8 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
             
             <div className="flex items-center justify-between px-1 pt-6">
                 <div className="flex items-center space-x-2">
-                  <Switch 
-                      id="ativo-prod" 
+                  <Switch
+                      id="ativo-prod"
                       checked={formData.ativo}
                       onCheckedChange={(val) => setFormData({ ...formData, ativo: val })}
                   />
@@ -669,6 +803,90 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
                 </div>
             </div>
           </div>
+          </TabsContent>
+
+          {isEditDialogOpen && (
+            <TabsContent value="unidades">
+              <div className="space-y-3 py-2">
+                <p className="text-xs text-muted-foreground">Configure preço e comissão deste produto em cada unidade.</p>
+                {loadingProdUtd ? (
+                  <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {units.map((unidade_id) => {
+                      const existing = produtosUnidade.find(r => r.unidade_id === unidade_id);
+                      const draft = existing ?? { produto_id: selectedProduct?.id ?? '', unidade_id, preco: 0, comissao_percentual: 0, ativo: true };
+                      return (
+                        <div key={unidade_id} className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-muted/20">
+                          <div className="flex-1 text-xs font-medium truncate">{unidade_id}</div>
+                          <div className="flex items-center gap-1">
+                            <DollarSign className="h-3 w-3 text-muted-foreground" />
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              placeholder="Preço"
+                              value={draft.preco}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                if (existing) {
+                                  setProdutosUnidade(prev => prev.map(r => r.unidade_id === unidade_id ? { ...r, preco: val } : r));
+                                } else {
+                                  setProdutosUnidade(prev => [...prev.filter(r => r.unidade_id !== unidade_id), { ...draft, preco: val }]);
+                                }
+                              }}
+                              className="h-7 w-20 text-xs bg-background px-2"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Percent className="h-3 w-3 text-muted-foreground" />
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.01}
+                              placeholder="Com%"
+                              value={draft.comissao_percentual}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                if (existing) {
+                                  setProdutosUnidade(prev => prev.map(r => r.unidade_id === unidade_id ? { ...r, comissao_percentual: val } : r));
+                                } else {
+                                  setProdutosUnidade(prev => [...prev.filter(r => r.unidade_id !== unidade_id), { ...draft, comissao_percentual: val }]);
+                                }
+                              }}
+                              className="h-7 w-16 text-xs bg-background px-2"
+                            />
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => handleSaveUnidadeConfig({ ...draft, produto_id: selectedProduct?.id ?? '' })}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          {existing?.id && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                              onClick={() => handleRemoveUnidadeConfig(existing.id!)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          )}
+          </Tabs>
 
           <DialogFooter className="gap-2 pt-2">
             <Button variant="outline" onClick={() => {
@@ -791,6 +1009,124 @@ export function InventoryClient({ initialProducts, categories }: InventoryClient
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</>
               ) : (
                 <><Check className="mr-2 h-4 w-4" />Registrar</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sale Dialog */}
+      <Dialog open={isSaleDialogOpen} onOpenChange={setIsSaleDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-violet-500/10">
+                <ShoppingCart className="h-5 w-5 text-violet-600" />
+              </div>
+              <div>
+                <DialogTitle>Registrar Venda</DialogTitle>
+                <DialogDescription>
+                  {saleProduct?.nome}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <Separator className="my-1" />
+          <div className="grid gap-3 py-2 grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Quantidade *</Label>
+              <Input
+                type="number"
+                min={0.001}
+                step={0.001}
+                value={saleForm.quantidade}
+                onChange={(e) => setSaleForm({ ...saleForm, quantidade: parseFloat(e.target.value) || 1 })}
+                className="bg-muted/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Preço Unitário (R$)</Label>
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                value={saleForm.preco_unitario}
+                onChange={(e) => setSaleForm({ ...saleForm, preco_unitario: parseFloat(e.target.value) || 0 })}
+                className="bg-muted/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Comissão (%)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={0.01}
+                value={saleForm.comissao_percentual_aplicada}
+                onChange={(e) => setSaleForm({ ...saleForm, comissao_percentual_aplicada: parseFloat(e.target.value) || 0 })}
+                className="bg-muted/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Data da Venda</Label>
+              <Input
+                type="date"
+                value={saleForm.data_venda}
+                onChange={(e) => setSaleForm({ ...saleForm, data_venda: e.target.value })}
+                className="bg-muted/30"
+              />
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-sm font-medium">Profissional</Label>
+              <Select value={saleForm.profissional_id} onValueChange={(val) => setSaleForm({ ...saleForm, profissional_id: val })}>
+                <SelectTrigger className="bg-muted/30">
+                  <SelectValue placeholder="Selecione o profissional" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem profissional</SelectItem>
+                  {staff.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-sm font-medium">Nome do Cliente</Label>
+              <Input
+                value={saleForm.nome_cliente}
+                onChange={(e) => setSaleForm({ ...saleForm, nome_cliente: e.target.value })}
+                placeholder="Ex: João Silva"
+                className="bg-muted/30"
+              />
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-sm font-medium">Unidade</Label>
+              <Select value={saleForm.unidade_id} onValueChange={(val) => setSaleForm({ ...saleForm, unidade_id: val })}>
+                <SelectTrigger className="bg-muted/30">
+                  <SelectValue placeholder="Selecione a unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem unidade</SelectItem>
+                  {units.map(u => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 rounded-lg bg-muted/30 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Total: </span>
+              <span className="font-bold">{formatCurrency(saleForm.preco_unitario * saleForm.quantidade)}</span>
+              <span className="text-muted-foreground ml-3">Comissão prof.: </span>
+              <span className="font-bold text-violet-600">{formatCurrency(saleForm.preco_unitario * saleForm.quantidade * (saleForm.comissao_percentual_aplicada / 100))}</span>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsSaleDialogOpen(false)} disabled={isLoading}>Cancelar</Button>
+            <Button onClick={handleSale} disabled={isLoading} className="min-w-[120px]">
+              {isLoading ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</>
+              ) : (
+                <><Check className="mr-2 h-4 w-4" />Registrar Venda</>
               )}
             </Button>
           </DialogFooter>

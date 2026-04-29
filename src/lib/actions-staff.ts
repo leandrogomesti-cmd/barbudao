@@ -2,7 +2,11 @@
 'use server';
 
 import { supabase } from '@/lib/supabase/client';
-import { Staff, HorarioProfissional, FolgaProfissional, DIAS_SEMANA } from '@/lib/types/staff';
+import {
+  Staff, HorarioProfissional, FolgaProfissional, DIAS_SEMANA,
+  ProfissionalServicoComissao, ServicoComissaoRow,
+  CommissionReport, CommissionReportItem, CommissionReportProdutoItem,
+} from '@/lib/types/staff';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/verify-session';
@@ -137,81 +141,227 @@ export async function deleteStaffMember(id: string) {
   }
 }
 
-export interface CommissionReportItem {
-  id: string;
-  inicio_agendado: string;
-  servico: string;
-  preco_venda: number;
+// ── Comissões por Serviço ───────────────────────────────────────────────────
+
+export async function getServicosUnidadeComComissao(
+  profissionalId: string,
+  unidadeId: string  // nome_fantasia value (from profissional.unidade_padrao)
+): Promise<ServicoComissaoRow[]> {
+  // Resolve nome_fantasia → id_loja (servicos_unidades uses id_loja as unidade_id)
+  const { data: empresa } = await supabase
+    .from('empresas_erp')
+    .select('id_loja')
+    .eq('nome_fantasia', unidadeId)
+    .single();
+
+  const idLoja = empresa?.id_loja ? String(empresa.id_loja) : unidadeId;
+
+  // Busca serviços ativos da unidade com comissão configurada para o profissional
+  const { data: servUnidades, error } = await supabase
+    .from('servicos_unidades')
+    .select('servico_id, ativo, servicos(nome, categoria_id, categorias_servicos(nome))')
+    .eq('unidade_id', idLoja)
+    .eq('ativo', true)
+    .order('servico_id');
+
+  if (error || !servUnidades) return [];
+
+  // Buscar comissões já configuradas para este profissional na unidade
+  const { data: comissoes } = await supabase
+    .from('profissional_servico_comissoes')
+    .select('servico_id, comissao_percentual')
+    .eq('profissional_id', profissionalId)
+    .eq('unidade_id', unidadeId);
+
+  const comissaoMap: Record<string, number> = {};
+  for (const c of comissoes ?? []) {
+    comissaoMap[c.servico_id] = Number(c.comissao_percentual);
+  }
+
+  return (servUnidades as any[]).map((su) => ({
+    servico_id: su.servico_id,
+    nome: su.servicos?.nome ?? '',
+    ativo: su.ativo ?? true,
+    categoria: su.servicos?.categorias_servicos?.nome ?? undefined,
+    comissao_percentual: comissaoMap[su.servico_id] ?? 0,
+  }));
 }
 
-export interface CommissionReport {
-  staffName: string;
-  atendimentos: number;
-  valorServicos: number;
-  comissaoServico: number;
-  prolabore: number;
-  total: number;
-  items: CommissionReportItem[];
+export async function upsertProfissionalComissoes(
+  profissionalId: string,
+  unidadeId: string,
+  comissoes: Array<{ servico_id: string; comissao_percentual: number }>
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const rows = comissoes.map((c) => ({
+      profissional_id: profissionalId,
+      unidade_id: unidadeId,
+      servico_id: c.servico_id,
+      comissao_percentual: c.comissao_percentual,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { error } = await supabase
+      .from('profissional_servico_comissoes')
+      .upsert(rows, { onConflict: 'profissional_id,servico_id,unidade_id' });
+
+    if (error) throw error;
+    revalidatePath('/staff');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error upserting comissoes:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+// ── Relatório de Comissões ──────────────────────────────────────────────────
+
+async function buildCommissionReportForStaff(
+  staffId: string,
+  startDate: string,
+  endDate: string
+): Promise<CommissionReport | null> {
+  const { data: staff, error: staffError } = await supabase
+    .from('profissionais')
+    .select('nome, comissao_servico, prolabore_fixo, unidade_padrao')
+    .eq('id', staffId)
+    .single();
+
+  if (staffError || !staff) return null;
+
+  // Atendimentos finalizados no período
+  const { data: appts, error: apptError } = await supabase
+    .from('controle_atendimentos')
+    .select('id, inicio_agendado, servico, servico_id, unidade_id, nome_cliente, forma_pagamento, valor_cobrado')
+    .eq('profissional_id', staffId)
+    .eq('status_agendamento', 'Finalizado')
+    .gte('inicio_agendado', startDate)
+    .lte('inicio_agendado', endDate)
+    .order('inicio_agendado', { ascending: false });
+
+  if (apptError) throw apptError;
+
+  // Buscar comissões configuradas para este profissional (todas as unidades)
+  const { data: comissoes } = await supabase
+    .from('profissional_servico_comissoes')
+    .select('servico_id, unidade_id, comissao_percentual')
+    .eq('profissional_id', staffId);
+
+  // Mapa: "servico_id:unidade_id" → percentual (unidade_id = nome_fantasia)
+  // Também indexa por "servico_id:" (fallback quando atendimento não tem unidade)
+  const comissaoMap: Record<string, number> = {};
+  for (const c of comissoes ?? []) {
+    comissaoMap[`${c.servico_id}:${c.unidade_id}`] = Number(c.comissao_percentual);
+  }
+  // Fallback: índice por servico_id usando unidade_padrao do profissional
+  const unidadePadrao = staff.unidade_padrao ?? '';
+  const comissaoGlobal = Number(staff.comissao_servico ?? 0);
+
+  const items: CommissionReportItem[] = [];
+  let valorServicos = 0;
+  let comissaoServico = 0;
+
+  for (const appt of appts ?? []) {
+    const preco = Number(appt.valor_cobrado ?? 0);
+    const unidade = appt.unidade_id ?? unidadePadrao;
+    const chave = `${appt.servico_id}:${unidade}`;
+    const chavePadrao = `${appt.servico_id}:${unidadePadrao}`;
+    const pct = comissaoMap[chave] !== undefined
+      ? comissaoMap[chave]
+      : comissaoMap[chavePadrao] !== undefined
+        ? comissaoMap[chavePadrao]
+        : comissaoGlobal;
+    const valorComissao = preco * (pct / 100);
+
+    valorServicos += preco;
+    comissaoServico += valorComissao;
+
+    items.push({
+      id: String(appt.id),
+      inicio_agendado: appt.inicio_agendado,
+      nome_cliente: appt.nome_cliente ?? undefined,
+      servico: appt.servico ?? '',
+      preco_venda: preco,
+      forma_pagamento: appt.forma_pagamento ?? undefined,
+      comissao_percentual: pct,
+      valor_comissao: valorComissao,
+    });
+  }
+
+  // Vendas de produtos no período
+  const { data: vendas } = await supabase
+    .from('vendas_produtos')
+    .select('*, produto:produtos(nome)')
+    .eq('profissional_id', staffId)
+    .gte('data_venda', startDate)
+    .lte('data_venda', endDate)
+    .order('data_venda', { ascending: false });
+
+  const produtoItems: CommissionReportProdutoItem[] = [];
+  let valorProdutos = 0;
+  let comissaoProduto = 0;
+
+  for (const v of vendas ?? []) {
+    const total = Number(v.preco_unitario) * Number(v.quantidade);
+    const pct = Number(v.comissao_percentual_aplicada);
+    const valorCom = total * (pct / 100);
+
+    valorProdutos += total;
+    comissaoProduto += valorCom;
+
+    produtoItems.push({
+      produto: (v.produto as any)?.nome ?? v.produto_id,
+      quantidade: Number(v.quantidade),
+      valor_total: total,
+      comissao_percentual: pct,
+      valor_comissao: valorCom,
+      data_venda: v.data_venda,
+      nome_cliente: v.nome_cliente ?? undefined,
+    });
+  }
+
+  const prolabore = Number(staff.prolabore_fixo ?? 0);
+
+  return {
+    staffId,
+    staffName: staff.nome,
+    atendimentos: items.length,
+    valorServicos,
+    comissaoServico,
+    valorProdutos,
+    comissaoProduto,
+    prolabore,
+    total: comissaoServico + comissaoProduto + prolabore,
+    items,
+    produtoItems,
+  };
 }
 
 export async function getCommissionReport(
   staffId: string,
   startDate: string,
   endDate: string
-): Promise<CommissionReport | null> {
+): Promise<CommissionReport[]> {
   try {
-    // 1. Get staff and rates
-    const { data: staff, error: staffError } = await supabase
-      .from('profissionais')
-      .select('nome, comissao_servico, prolabore_fixo')
-      .eq('id', staffId)
-      .single();
+    if (staffId === 'all') {
+      // Buscar todos os profissionais ativos com agenda
+      const { data: allStaff } = await supabase
+        .from('profissionais')
+        .select('id')
+        .eq('ativo', true)
+        .eq('possui_agenda', true);
 
-    if (staffError || !staff) return null;
-
-    // 2. Get finalized appointments in period via FK (join com servicos para preço)
-    const { data: appts, error: apptError } = await supabase
-      .from('controle_atendimentos')
-      .select('id, inicio_agendado, servico, servicos(preco_venda)')
-      .eq('profissional_id', staffId)
-      .eq('status_agendamento', 'Finalizado')
-      .gte('inicio_agendado', startDate)
-      .lte('inicio_agendado', endDate)
-      .order('inicio_agendado', { ascending: false });
-
-    if (apptError) throw apptError;
-
-    // 3. Calcular valores usando preço do join (sem N queries adicionais)
-    const items: CommissionReportItem[] = [];
-    let valorServicos = 0;
-
-    for (const appt of appts ?? []) {
-      const preco = (appt.servicos as any)?.preco_venda ?? 0;
-      valorServicos += preco;
-      items.push({
-        id: String(appt.id),
-        inicio_agendado: appt.inicio_agendado,
-        servico: appt.servico ?? '',
-        preco_venda: preco,
-      });
+      const reports = await Promise.all(
+        (allStaff ?? []).map((s) => buildCommissionReportForStaff(s.id, startDate, endDate))
+      );
+      return reports.filter((r): r is CommissionReport => r !== null && r.atendimentos > 0);
     }
 
-    const taxa = (staff.comissao_servico ?? 0) / 100;
-    const comissaoServico = valorServicos * taxa;
-    const prolabore = staff.prolabore_fixo ?? 0;
-
-    return {
-      staffName: staff.nome,
-      atendimentos: items.length,
-      valorServicos,
-      comissaoServico,
-      prolabore,
-      total: comissaoServico + prolabore,
-      items,
-    };
+    const report = await buildCommissionReportForStaff(staffId, startDate, endDate);
+    return report ? [report] : [];
   } catch (error: any) {
     console.error('Error fetching commission report:', error);
-    return null;
+    return [];
   }
 }
 

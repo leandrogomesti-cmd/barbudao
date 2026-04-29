@@ -2,9 +2,9 @@
 'use server';
 
 import { supabase } from '@/lib/supabase/client';
-import { Service, ServiceCategory, Product, ProductCategory, ServiceConsumable, StockMovement } from '@/lib/types/business';
+import { Service, ServiceCategory, Product, ProductCategory, ServiceConsumable, StockMovement, ProdutoUnidade, VendaProduto } from '@/lib/types/business';
 import { revalidatePath } from 'next/cache';
-import { ServiceSchema, ProductSchema, parseSchema } from '@/lib/schemas';
+import { ServiceSchema, ProductSchema, ProdutoUnidadeSchema, VendaProdutoSchema, parseSchema } from '@/lib/schemas';
 
 // --- Services ---
 export async function getServices(): Promise<Service[]> {
@@ -305,4 +305,133 @@ export async function getStockMovements(produtoId: string, limit = 50): Promise<
     return [];
   }
   return data as StockMovement[];
+}
+
+// --- Produtos por Unidade ---
+
+export async function getProdutosUnidade(unidadeId: string): Promise<ProdutoUnidade[]> {
+  const { data, error } = await supabase
+    .from('produtos_unidade')
+    .select('*, produto:produtos(nome, fabricante)')
+    .eq('unidade_id', unidadeId)
+    .order('produto_id');
+
+  if (error) {
+    console.error('Error fetching produtos_unidade:', error);
+    return [];
+  }
+  return data as any[];
+}
+
+export async function getProdutosUnidadePorProduto(produtoId: string): Promise<ProdutoUnidade[]> {
+  const { data, error } = await supabase
+    .from('produtos_unidade')
+    .select('*')
+    .eq('produto_id', produtoId)
+    .order('unidade_id');
+
+  if (error) {
+    console.error('Error fetching produtos_unidade:', error);
+    return [];
+  }
+  return data as ProdutoUnidade[];
+}
+
+export async function upsertProdutoUnidade(data: Omit<ProdutoUnidade, 'id'>): Promise<{ success: boolean; message?: string; data?: ProdutoUnidade }> {
+  const validation = parseSchema(ProdutoUnidadeSchema, data);
+  if (!validation.success) return { success: false, message: validation.message };
+
+  try {
+    const { data: upserted, error } = await supabase
+      .from('produtos_unidade')
+      .upsert({ ...validation.data, updated_at: new Date().toISOString() }, { onConflict: 'produto_id,unidade_id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    revalidatePath('/inventory');
+    return { success: true, data: upserted as ProdutoUnidade };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+export async function deleteProdutoUnidade(id: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    const { error } = await supabase
+      .from('produtos_unidade')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    revalidatePath('/inventory');
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+// --- Vendas de Produtos ---
+
+export async function createVendaProduto(data: Omit<VendaProduto, 'id'>): Promise<{ success: boolean; message?: string }> {
+  const validation = parseSchema(VendaProdutoSchema, data);
+  if (!validation.success) return { success: false, message: validation.message };
+
+  try {
+    const { error } = await supabase
+      .from('vendas_produtos')
+      .insert([validation.data]);
+
+    if (error) throw error;
+
+    // Deduzir estoque se produto tiver controle
+    if (data.quantidade && data.produto_id) {
+      const { data: produto } = await supabase
+        .from('produtos')
+        .select('estoque_atual')
+        .eq('id', data.produto_id)
+        .single();
+
+      if (produto) {
+        const novoEstoque = Math.max(0, (produto.estoque_atual ?? 0) - Number(data.quantidade));
+        await supabase.from('produtos').update({ estoque_atual: novoEstoque }).eq('id', data.produto_id);
+        await supabase.from('movimentacoes_estoque').insert([{
+          produto_id: data.produto_id,
+          tipo: 'saida',
+          quantidade: data.quantidade,
+          motivo: 'Venda',
+          referencia: data.nome_cliente ?? undefined,
+        }]);
+      }
+    }
+
+    revalidatePath('/inventory');
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+export async function getVendasProdutos(
+  profissionalId: string,
+  startDate: string,
+  endDate: string
+): Promise<VendaProduto[]> {
+  let query = supabase
+    .from('vendas_produtos')
+    .select('*, produto:produtos(nome)')
+    .gte('data_venda', startDate)
+    .lte('data_venda', endDate)
+    .order('data_venda', { ascending: false });
+
+  if (profissionalId !== 'all') {
+    query = query.eq('profissional_id', profissionalId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('Error fetching vendas_produtos:', error);
+    return [];
+  }
+  return data as any[];
 }

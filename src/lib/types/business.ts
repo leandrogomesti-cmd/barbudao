@@ -60,6 +60,31 @@ export interface StockMovement {
   criado_em: string;
 }
 
+export interface ProdutoUnidade {
+  id?: string;
+  produto_id: string;
+  unidade_id: string;
+  preco: number;
+  comissao_percentual: number;
+  ativo: boolean;
+  produto?: { nome: string; fabricante?: string; };
+}
+
+export interface VendaProduto {
+  id?: string;
+  produto_id: string;
+  profissional_id?: string;
+  cliente_id?: string;
+  unidade_id?: string;
+  nome_cliente?: string;
+  quantidade: number;
+  preco_unitario: number;
+  comissao_percentual_aplicada: number;
+  data_venda: string;
+  observacoes?: string;
+  produto?: { nome: string; };
+}
+
 export interface EmpresaERP {
   id: string;
   id_loja: string | number;
