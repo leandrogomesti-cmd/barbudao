@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Staff } from '@/lib/types/staff';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Staff, ServicoComissaoRow } from '@/lib/types/staff';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -43,9 +43,10 @@ import {
   Phone,
   Mail,
   Briefcase,
-  Clock
+  Clock,
+  Percent,
 } from 'lucide-react';
-import { createStaffWithAuth, updateStaffMember, deleteStaffMember } from '@/lib/actions-staff';
+import { createStaffWithAuth, updateStaffMember, deleteStaffMember, getServicosUnidadeComComissao, upsertProfissionalComissoes } from '@/lib/actions-staff';
 import { HorariosForm } from '@/components/staff/horarios-form';
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from 'next/navigation';
@@ -90,9 +91,22 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
     prolabore_fixo: 0
   });
   const [novaSenha, setNovaSenha] = useState('');
+  const [comissoesServico, setComissoesServico] = useState<ServicoComissaoRow[]>([]);
+  const [loadingComissoes, setLoadingComissoes] = useState(false);
 
   const { toast } = useToast();
   const router = useRouter();
+
+  const loadComissoes = useCallback(async (profissionalId: string, unidadeId: string) => {
+    if (!unidadeId) { setComissoesServico([]); return; }
+    setLoadingComissoes(true);
+    try {
+      const rows = await getServicosUnidadeComComissao(profissionalId || '', unidadeId);
+      setComissoesServico(rows);
+    } finally {
+      setLoadingComissoes(false);
+    }
+  }, []);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -159,6 +173,11 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
       prolabore_fixo: member.prolabore_fixo ?? 0,
     });
     setIsEditDialogOpen(true);
+    if (member.unidade_padrao) {
+      loadComissoes(member.id, member.unidade_padrao);
+    } else {
+      setComissoesServico([]);
+    }
   };
 
   const openDeleteDialog = (member: Staff) => {
@@ -190,13 +209,20 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
     setIsLoading(true);
     try {
       const result = await updateStaffMember(selectedStaff.id, formData);
-      if (result.success) {
-        toast({ title: "Sucesso", description: result.message });
-        setIsEditDialogOpen(false);
-        router.refresh();
-      } else {
+      if (!result.success) {
         toast({ title: "Erro", description: result.message, variant: "destructive" });
+        return;
       }
+      if (comissoesServico.length > 0 && formData.unidade_padrao) {
+        await upsertProfissionalComissoes(
+          selectedStaff.id,
+          formData.unidade_padrao,
+          comissoesServico.map(s => ({ servico_id: s.servico_id, comissao_percentual: s.comissao_percentual }))
+        );
+      }
+      toast({ title: "Sucesso", description: result.message });
+      setIsEditDialogOpen(false);
+      router.refresh();
     } catch (error) {
       toast({ title: "Erro", description: "Ocorreu um erro ao atualizar.", variant: "destructive" });
     } finally {
@@ -555,9 +581,14 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="unidade" className="text-sm font-medium">Unidade Padrão</Label>
-              <Select 
-                value={formData.unidade_padrao} 
-                onValueChange={(val) => setFormData({ ...formData, unidade_padrao: val })}
+              <Select
+                value={formData.unidade_padrao}
+                onValueChange={(val) => {
+                  setFormData({ ...formData, unidade_padrao: val });
+                  if (isEditDialogOpen && selectedStaff?.id) {
+                    loadComissoes(selectedStaff.id, val);
+                  }
+                }}
               >
                 <SelectTrigger id="unidade" className="bg-muted/30">
                   <SelectValue placeholder="Selecione a unidade" />
@@ -588,38 +619,83 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
             </div>
 
             {/* Commissions Section */}
-            <div className="sm:col-span-2 grid grid-cols-3 gap-4 border-y py-4 my-2">
+            <div className="sm:col-span-2 space-y-4 border-y py-4 my-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                    <Label htmlFor="com-serv" className="text-xs font-bold uppercase text-muted-foreground">Serviço (%)</Label>
-                    <Input
-                        id="com-serv"
-                        type="number"
-                        value={formData.comissao_servico}
-                        onChange={(e) => setFormData({ ...formData, comissao_servico: parseFloat(e.target.value) })}
-                        className="bg-muted/20"
-                    />
+                  <Label htmlFor="com-prod" className="text-xs font-bold uppercase text-muted-foreground">Produto — % Global (fallback)</Label>
+                  <Input
+                    id="com-prod"
+                    type="number"
+                    value={formData.comissao_produto}
+                    onChange={(e) => setFormData({ ...formData, comissao_produto: parseFloat(e.target.value) })}
+                    className="bg-muted/20"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                    <Label htmlFor="com-prod" className="text-xs font-bold uppercase text-muted-foreground">Produto (%)</Label>
-                    <Input
-                        id="com-prod"
-                        type="number"
-                        value={formData.comissao_produto}
-                        onChange={(e) => setFormData({ ...formData, comissao_produto: parseFloat(e.target.value) })}
-                        className="bg-muted/20"
-                    />
+                  <Label htmlFor="pro-fixo" className="text-xs font-bold uppercase text-muted-foreground">Prolabore (R$)</Label>
+                  <Input
+                    id="pro-fixo"
+                    type="number"
+                    step="0.01"
+                    value={formData.prolabore_fixo}
+                    onChange={(e) => setFormData({ ...formData, prolabore_fixo: parseFloat(e.target.value) })}
+                    className="bg-muted/20"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                    <Label htmlFor="pro-fixo" className="text-xs font-bold uppercase text-muted-foreground">Prolabore (R$)</Label>
-                    <Input
-                        id="pro-fixo"
-                        type="number"
-                        step="0.01"
-                        value={formData.prolabore_fixo}
-                        onChange={(e) => setFormData({ ...formData, prolabore_fixo: parseFloat(e.target.value) })}
-                        className="bg-muted/20"
-                    />
+              </div>
+
+              {/* Per-service commission table */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Percent className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Label className="text-xs font-bold uppercase text-muted-foreground">Comissões por Serviço</Label>
                 </div>
+                {!formData.unidade_padrao ? (
+                  <p className="text-xs text-muted-foreground italic">Selecione a unidade padrão para configurar comissões por serviço.</p>
+                ) : loadingComissoes ? (
+                  <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando serviços...
+                  </div>
+                ) : comissoesServico.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhum serviço encontrado para esta unidade.</p>
+                ) : (
+                  <div className="rounded-md border border-border/60 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-muted/40 border-b border-border/60">
+                          <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Serviço</th>
+                          <th className="text-left px-3 py-2 font-semibold text-muted-foreground w-20">% Comissão</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {comissoesServico.map((row, idx) => (
+                          <tr key={row.servico_id} className={cn('border-b border-border/40 last:border-0', !row.ativo && 'opacity-50')}>
+                            <td className="px-3 py-1.5">
+                              <div className="font-medium">{row.nome}</div>
+                              {row.categoria && <div className="text-muted-foreground text-[10px]">{row.categoria}</div>}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={0.01}
+                                value={row.comissao_percentual}
+                                onChange={(e) => {
+                                  const updated = [...comissoesServico];
+                                  updated[idx] = { ...updated[idx], comissao_percentual: parseFloat(e.target.value) || 0 };
+                                  setComissoesServico(updated);
+                                }}
+                                className="h-7 w-20 text-xs bg-muted/20 px-2"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="sm:col-span-2 flex items-center justify-between px-1">
