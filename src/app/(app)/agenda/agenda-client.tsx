@@ -1,6 +1,12 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+
+// Arredonda HH:mm para o slot de 30 min anterior (ex: "12:15" → "12:00", "12:45" → "12:30")
+function roundToSlot(timeStr: string): string {
+  const [h, m] = timeStr.split(':').map(Number);
+  return `${String(h).padStart(2, '0')}:${m < 30 ? '00' : '30'}`;
+}
 import { Appointment } from '@/lib/types/agenda';
 import { Staff } from '@/lib/types/staff';
 import { Card, CardContent } from '@/components/ui/card';
@@ -118,8 +124,15 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
     return allActive;
   }, [staff, perfil, currentStaff, selectedUnit]);
 
-  // Mapa de IDs e nomes dos profissionais visíveis (detecta agendamentos órfãos)
-  const visibleStaffNames = useMemo(() => new Set(visibleStaff.map(s => s.nome)), [visibleStaff]);
+  // Mapa de IDs, nomes e apelidos dos profissionais visíveis (detecta agendamentos órfãos)
+  const visibleStaffNames = useMemo(() => {
+    const names = new Set<string>();
+    visibleStaff.forEach(s => {
+      names.add(s.nome);
+      if (s.apelido) names.add(s.apelido);
+    });
+    return names;
+  }, [visibleStaff]);
   const visibleStaffIds = useMemo(() => new Set(visibleStaff.map(s => s.id).filter(Boolean)), [visibleStaff]);
 
   // Agendamentos sem profissional definido OU cujo profissional não tem coluna visível
@@ -727,7 +740,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
               </div>
               {timeSlots.map(slot => {
                 const droppableId = `__waitlist__|${slot}`;
-                const appsInSlot = waitlistItems.filter(a => format(parseISO(a.inicio_agendado), 'HH:mm') === slot);
+                const appsInSlot = waitlistItems.filter(a => roundToSlot(format(parseISO(a.inicio_agendado), 'HH:mm')) === slot);
                 return (
                   <Droppable key={droppableId} droppableId={droppableId}>
                     {(provided, snapshot) => (
@@ -781,9 +794,10 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
 
             {/* Professional Columns */}
             {visibleStaff.map(member => {
-              // Matches by nome OR profissional_id (tolerates name mismatches between N8N and cadastro)
+              // Matches by nome, apelido OR profissional_id (tolerates name mismatches between N8N and cadastro)
               const matchesMember = (a: Appointment) =>
                 a.profissional === member.nome ||
+                (!!member.apelido && a.profissional === member.apelido) ||
                 (!!a.profissional_id && a.profissional_id === member.id);
               const memberAppts = appointments.filter(a =>
                 matchesMember(a) && isSameDay(parseISO(a.inicio_agendado), selectedDate)
@@ -806,7 +820,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
                   const droppableId = `${member.nome}|${slot}`;
                   const appointmentsInSlot = appointments.filter(a =>
                     matchesMember(a) &&
-                    format(parseISO(a.inicio_agendado), 'HH:mm') === slot &&
+                    roundToSlot(format(parseISO(a.inicio_agendado), 'HH:mm')) === slot &&
                     isSameDay(parseISO(a.inicio_agendado), selectedDate)
                   );
 
@@ -901,7 +915,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
                 </div>
                 {timeSlots.map(slot => {
                   const appsInSlot = indiferenteAppointments.filter(a =>
-                    format(parseISO(a.inicio_agendado), 'HH:mm') === slot
+                    roundToSlot(format(parseISO(a.inicio_agendado), 'HH:mm')) === slot
                   );
                   return (
                     <div key={slot} className="h-20 border-b border-border/40 p-1.5">
