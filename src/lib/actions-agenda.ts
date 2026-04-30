@@ -132,6 +132,16 @@ export async function updateAppointmentTime(
 
     if (professional !== undefined) {
       updateData.profissional = professional;
+      if (professional && professional !== '') {
+        const { data: profData } = await supabase
+          .from('profissionais')
+          .select('id')
+          .ilike('nome', professional)
+          .maybeSingle();
+        if (profData?.id) updateData.profissional_id = profData.id;
+      } else {
+        updateData.profissional_id = null;
+      }
     }
 
     // GAP-03 FIX: Atualizar status junto para evitar race condition de 2 writes
