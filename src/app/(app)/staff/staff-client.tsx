@@ -86,8 +86,8 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
     perfil_acesso: 'PROFISSIONAL',
     possui_agenda: true,
     ativo: true,
-    comissao_servico: 50,
-    comissao_produto: 10,
+    comissao_servico: 0,
+    comissao_produto: 0,
     prolabore_fixo: 0
   });
   const [novaSenha, setNovaSenha] = useState('');
@@ -168,8 +168,8 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
       funcao: member.funcao ?? '',
       unidade_padrao: member.unidade_padrao ?? '',
       perfil_acesso: member.perfil_acesso ?? 'PROFISSIONAL',
-      comissao_servico: member.comissao_servico ?? 50,
-      comissao_produto: member.comissao_produto ?? 10,
+      comissao_servico: member.comissao_servico ?? 0,
+      comissao_produto: member.comissao_produto ?? 0,
       prolabore_fixo: member.prolabore_fixo ?? 0,
     });
     setIsEditDialogOpen(true);
@@ -197,8 +197,8 @@ export function StaffClient({ initialStaff, units }: StaffClientProps) {
       perfil_acesso: 'PROFISSIONAL',
       possui_agenda: true,
       ativo: true,
-      comissao_servico: 50,
-      comissao_produto: 10,
+      comissao_servico: 0,
+      comissao_produto: 0,
       prolabore_fixo: 0
     });
     setIsCreateDialogOpen(true);

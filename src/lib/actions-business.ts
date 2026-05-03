@@ -5,6 +5,18 @@ import { supabase } from '@/lib/supabase/client';
 import { Service, ServiceCategory, Product, ProductCategory, ServiceConsumable, StockMovement, ProdutoUnidade, VendaProduto } from '@/lib/types/business';
 import { revalidatePath } from 'next/cache';
 import { ServiceSchema, ProductSchema, ProdutoUnidadeSchema, VendaProdutoSchema, parseSchema } from '@/lib/schemas';
+import { requireRole } from '@/lib/auth/rbac';
+import { AuthorizationError, type Role } from '@/lib/auth/rbac-types';
+
+async function guardBusiness() {
+  try {
+    await requireRole(['ADMIN', 'GERENTE'] as Role[]);
+    return null;
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { success: false as const, message: e.message };
+    throw e;
+  }
+}
 
 // --- Services ---
 export async function getServices(): Promise<Service[]> {
@@ -69,6 +81,8 @@ export async function getServiceCategories(): Promise<ServiceCategory[]> {
 }
 
 export async function createService(data: Partial<Service>) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   const validation = parseSchema(ServiceSchema, data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -87,6 +101,8 @@ export async function createService(data: Partial<Service>) {
 }
 
 export async function updateService(id: string, data: Partial<Service>) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   const validation = parseSchema(ServiceSchema.partial(), data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -104,6 +120,8 @@ export async function updateService(id: string, data: Partial<Service>) {
 }
 
 export async function deleteService(id: string) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   try {
     // GAP-10 FIX: Verificar se existem insumos cadastrados antes de deletar
     const { data: insumos } = await supabase
@@ -147,6 +165,8 @@ export async function getServiceConsumables(serviceId: string): Promise<ServiceC
 }
 
 export async function addServiceConsumable(data: Partial<ServiceConsumable>) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   try {
     // GAP-01 FIX: Tabela correta é 'servico_insumos', não 'servicos_produtos'
     const { error } = await supabase
@@ -161,6 +181,8 @@ export async function addServiceConsumable(data: Partial<ServiceConsumable>) {
 }
 
 export async function removeServiceConsumable(id: string) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   try {
     // GAP-01 FIX: Tabela correta é 'servico_insumos', não 'servicos_produtos'
     const { error } = await supabase
@@ -203,6 +225,8 @@ export async function getProductCategories(): Promise<ProductCategory[]> {
 }
 
 export async function createProduct(data: Partial<Product>) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   const validation = parseSchema(ProductSchema, data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -221,6 +245,8 @@ export async function createProduct(data: Partial<Product>) {
 }
 
 export async function updateProduct(id: string, data: Partial<Product>) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   const validation = parseSchema(ProductSchema.partial(), data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -238,6 +264,8 @@ export async function updateProduct(id: string, data: Partial<Product>) {
 }
 
 export async function deleteProduct(id: string) {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   try {
     const { error } = await supabase
       .from('produtos')
@@ -259,6 +287,8 @@ export async function createStockMovement(data: {
   motivo?: string;
   referencia?: string;
 }): Promise<{ success: boolean; message?: string }> {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   try {
     const { error: insertError } = await supabase
       .from('movimentacoes_estoque')
@@ -338,6 +368,8 @@ export async function getProdutosUnidadePorProduto(produtoId: string): Promise<P
 }
 
 export async function upsertProdutoUnidade(data: Omit<ProdutoUnidade, 'id'>): Promise<{ success: boolean; message?: string; data?: ProdutoUnidade }> {
+  const denied = await guardBusiness();
+  if (denied) return denied;
   const validation = parseSchema(ProdutoUnidadeSchema, data);
   if (!validation.success) return { success: false, message: validation.message };
 
