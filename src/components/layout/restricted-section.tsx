@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/rbac';
+import { getCurrentUser, getSessionEmail } from '@/lib/auth/rbac';
 import type { Role } from '@/lib/auth/rbac-types';
 
 /**
@@ -16,7 +16,11 @@ export default async function RestrictedSection({
     redirectTo?: string;
 }) {
     const user = await getCurrentUser();
-    if (!user) redirect('/login');
+    if (!user) {
+        const email = await getSessionEmail();
+        if (!email) redirect('/login');
+        redirect('/access-denied');
+    }
     if (!allowed.includes(user.role)) redirect(redirectTo);
     return <>{children}</>;
 }
