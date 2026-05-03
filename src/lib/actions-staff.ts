@@ -12,6 +12,18 @@ import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/verify-session';
 import { StaffSchema, parseSchema } from '@/lib/schemas';
 import { getFirebaseAdmin } from '@/lib/firebase/admin';
+import { requireRole } from '@/lib/auth/rbac';
+import { AuthorizationError, type Role } from '@/lib/auth/rbac-types';
+
+async function guardManagement() {
+  try {
+    await requireRole(['ADMIN', 'GERENTE'] as Role[]);
+    return null;
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { success: false as const, message: e.message };
+    throw e;
+  }
+}
 
 
 /**
@@ -58,6 +70,8 @@ export async function getStaffMembers(): Promise<Staff[]> {
 }
 
 export async function createStaffMember(data: Partial<Staff>) {
+  const denied = await guardManagement();
+  if (denied) return denied;
   const validation = parseSchema(StaffSchema, data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -79,6 +93,8 @@ export async function createStaffMember(data: Partial<Staff>) {
 }
 
 export async function createStaffWithAuth(data: Partial<Staff> & { senha?: string }) {
+  const denied = await guardManagement();
+  if (denied) return denied;
   const { senha, ...staffData } = data;
 
   if (staffData.email && senha) {
@@ -103,6 +119,8 @@ export async function createStaffWithAuth(data: Partial<Staff> & { senha?: strin
 }
 
 export async function updateStaffMember(id: string, data: Partial<Staff>) {
+  const denied = await guardManagement();
+  if (denied) return denied;
   const validation = parseSchema(StaffSchema.partial(), data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -123,6 +141,8 @@ export async function updateStaffMember(id: string, data: Partial<Staff>) {
 }
 
 export async function deleteStaffMember(id: string) {
+  const denied = await guardManagement();
+  if (denied) return denied;
   try {
     // GAP-02 FIX: Soft-delete para preservar histórico de atendimentos
     // Não apaga fisicamente: apenas marca como inativo
@@ -192,6 +212,8 @@ export async function upsertProfissionalComissoes(
   unidadeId: string,
   comissoes: Array<{ servico_id: string; comissao_percentual: number }>
 ): Promise<{ success: boolean; message?: string }> {
+  const denied = await guardManagement();
+  if (denied) return denied;
   try {
     const rows = comissoes.map((c) => ({
       profissional_id: profissionalId,
@@ -247,13 +269,17 @@ async function buildCommissionReportForStaff(
     .select('servico_id, unidade_id, comissao_percentual')
     .eq('profissional_id', staffId);
 
-  // Mapa: "servico_id:unidade_id" → percentual (unidade_id = nome_fantasia)
-  // Também indexa por "servico_id:" (fallback quando atendimento não tem unidade)
+  // Mapa: "servico_id:unidade_id" → percentual (unidade_id geralmente é nome_fantasia)
+  // Também construímos um índice "qualquer unidade" por servico_id como último recurso
+  // antes de cair no comissao_servico global do profissional.
   const comissaoMap: Record<string, number> = {};
+  const comissaoPorServico: Record<string, number[]> = {};
   for (const c of comissoes ?? []) {
-    comissaoMap[`${c.servico_id}:${c.unidade_id}`] = Number(c.comissao_percentual);
+    const pct = Number(c.comissao_percentual);
+    if (!Number.isFinite(pct)) continue;
+    comissaoMap[`${c.servico_id}:${c.unidade_id}`] = pct;
+    (comissaoPorServico[c.servico_id] ??= []).push(pct);
   }
-  // Fallback: índice por servico_id usando unidade_padrao do profissional
   const unidadePadrao = staff.unidade_padrao ?? '';
   const comissaoGlobal = Number(staff.comissao_servico ?? 0);
 
@@ -263,16 +289,40 @@ async function buildCommissionReportForStaff(
 
   for (const appt of appts ?? []) {
     const preco = Number(appt.valor_cobrado ?? 0);
-    const unidade = appt.unidade_id ?? unidadePadrao;
-    const chave = `${appt.servico_id}:${unidade}`;
-    const chavePadrao = `${appt.servico_id}:${unidadePadrao}`;
-    const pct = comissaoMap[chave] !== undefined
-      ? comissaoMap[chave]
-      : comissaoMap[chavePadrao] !== undefined
-        ? comissaoMap[chavePadrao]
-        : comissaoGlobal;
-    const valorComissao = preco * (pct / 100);
+    const unidadeAtendimento = appt.unidade_id ?? unidadePadrao;
+    const servicoId = appt.servico_id;
 
+    // Prioridade do percentual (alinhada ao plano de correção):
+    // 1. override exato servico_id + unidade do atendimento
+    // 2. override servico_id + unidade_padrao do profissional
+    // 3. qualquer override do servico_id (média, se houver várias unidades)
+    // 4. comissao_servico global do profissional
+    // 5. zero (com warn)
+    let pct = 0;
+    let fonte = 'zero';
+    if (servicoId && comissaoMap[`${servicoId}:${unidadeAtendimento}`] !== undefined) {
+      pct = comissaoMap[`${servicoId}:${unidadeAtendimento}`];
+      fonte = 'override_unidade_atendimento';
+    } else if (servicoId && comissaoMap[`${servicoId}:${unidadePadrao}`] !== undefined) {
+      pct = comissaoMap[`${servicoId}:${unidadePadrao}`];
+      fonte = 'override_unidade_padrao';
+    } else if (servicoId && comissaoPorServico[servicoId]?.length) {
+      const arr = comissaoPorServico[servicoId];
+      pct = arr.reduce((a, b) => a + b, 0) / arr.length;
+      fonte = 'override_qualquer_unidade';
+    } else if (Number.isFinite(comissaoGlobal) && comissaoGlobal > 0) {
+      pct = comissaoGlobal;
+      fonte = 'global_profissional';
+    }
+
+    if (pct === 0 || preco === 0) {
+      console.warn(
+        `[COMISSAO] Atendimento ${appt.id} resultou em comissão zerada — pct=${pct} preco=${preco} ` +
+          `servicoId=${servicoId} unidadeAtendimento=${unidadeAtendimento} fonte=${fonte}`
+      );
+    }
+
+    const valorComissao = preco * (pct / 100);
     valorServicos += preco;
     comissaoServico += valorComissao;
 

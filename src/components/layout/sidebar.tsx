@@ -28,49 +28,72 @@ import {
     BadgeDollarSign,
     Store
 } from 'lucide-react';
+import type { Role } from '@/lib/auth/rbac-types';
 
-const NAV_GROUPS = [
+type NavItem = {
+    href: string;
+    label: string;
+    icon: React.ElementType;
+    hasNotification?: boolean;
+    roles?: Role[]; // se omitido, todos os roles autenticados veem
+};
+
+const NAV_GROUPS: { label: string; items: NavItem[]; roles?: Role[] }[] = [
     {
         label: 'Principal',
         items: [
-            { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'GERENTE'] },
             { href: '/agenda', label: 'Agenda', icon: Calendar, hasNotification: true },
-            { href: '/secretary', label: 'Secretária', icon: Sparkles },
+            { href: '/secretary', label: 'Secretária', icon: Sparkles, roles: ['ADMIN', 'GERENTE'] },
         ],
     },
     {
         label: 'Gestão',
+        roles: ['ADMIN', 'GERENTE', 'RECEPCAO'],
         items: [
-            { href: '/contacts', label: 'Clientes', icon: Users },
-            { href: '/staff', label: 'Profissionais', icon: Scissors },
-            { href: '/services', label: 'Serviços', icon: Briefcase },
-            { href: '/inventory', label: 'Estoque', icon: Package },
+            { href: '/contacts', label: 'Clientes', icon: Users, roles: ['ADMIN', 'GERENTE', 'RECEPCAO'] },
+            { href: '/staff', label: 'Profissionais', icon: Scissors, roles: ['ADMIN', 'GERENTE'] },
+            { href: '/services', label: 'Serviços', icon: Briefcase, roles: ['ADMIN', 'GERENTE'] },
+            { href: '/inventory', label: 'Estoque', icon: Package, roles: ['ADMIN', 'GERENTE'] },
         ],
     },
     {
         label: 'Financeiro',
+        roles: ['ADMIN', 'GERENTE'],
         items: [
-            { href: '/finance', label: 'Financeiro', icon: Wallet },
-            { href: '/staff/commissions', label: 'Comissões', icon: BadgeDollarSign },
-            { href: '/wallet', label: 'Carteira Digital', icon: CreditCard },
+            { href: '/finance', label: 'Financeiro', icon: Wallet, roles: ['ADMIN', 'GERENTE'] },
+            { href: '/staff/commissions', label: 'Comissões', icon: BadgeDollarSign, roles: ['ADMIN', 'GERENTE'] },
+            { href: '/wallet', label: 'Carteira Digital', icon: CreditCard, roles: ['ADMIN', 'GERENTE'] },
         ],
     },
     {
         label: 'Marketing',
+        roles: ['ADMIN', 'GERENTE'],
         items: [
-            { href: '/campaigns', label: 'Campanhas', icon: Megaphone },
+            { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['ADMIN', 'GERENTE'] },
         ],
     },
     {
         label: 'Admin',
+        roles: ['ADMIN'],
         items: [
-            { href: '/admin/dashboard', label: 'Painel Operacional', icon: ShieldCheck },
-            { href: '/settings/empresas', label: 'Unidades', icon: Store },
-            { href: '/settings/instances', label: 'Integrações', icon: Settings },
+            { href: '/admin/dashboard', label: 'Painel Operacional', icon: ShieldCheck, roles: ['ADMIN'] },
+            { href: '/settings/empresas', label: 'Unidades', icon: Store, roles: ['ADMIN'] },
+            { href: '/settings/instances', label: 'Integrações', icon: Settings, roles: ['ADMIN'] },
         ],
     },
 
 ];
+
+function filterNavForRole(role: Role) {
+    return NAV_GROUPS
+        .filter(g => !g.roles || g.roles.includes(role))
+        .map(g => ({
+            ...g,
+            items: g.items.filter(i => !i.roles || i.roles.includes(role)),
+        }))
+        .filter(g => g.items.length > 0);
+}
 
 function NavItem({ href, label, icon: Icon, isActive, hasNotification, onClick }: {
     href: string;
@@ -105,10 +128,11 @@ function NavItem({ href, label, icon: Icon, isActive, hasNotification, onClick }
     );
 }
 
-function SidebarContent({ onLinkClick, isCollapsed }: { onLinkClick?: () => void, isCollapsed?: boolean }) {
+function SidebarContent({ onLinkClick, isCollapsed, role }: { onLinkClick?: () => void, isCollapsed?: boolean, role: Role }) {
     const pathname = usePathname();
     const router = useRouter();
     const [isLogoutPending, startLogoutTransition] = useTransition();
+    const navGroups = filterNavForRole(role);
 
     const handleLogout = () => {
         startLogoutTransition(async () => {
@@ -136,7 +160,7 @@ function SidebarContent({ onLinkClick, isCollapsed }: { onLinkClick?: () => void
 
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto py-4 px-4 space-y-8 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                {NAV_GROUPS.map((group) => (
+                {navGroups.map((group) => (
                     <div key={group.label} className="space-y-2">
                         {!isCollapsed && (
                             <p className="px-3 text-[10px] font-black uppercase tracking-[0.15em] text-sidebar-foreground/20 animate-in fade-in duration-500">
@@ -204,7 +228,7 @@ function SidebarContent({ onLinkClick, isCollapsed }: { onLinkClick?: () => void
     );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ role }: { role: Role }) {
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -248,7 +272,7 @@ export default function Sidebar() {
                 'md:hidden fixed top-0 left-0 z-50 h-full w-[280px] shadow-2xl transform transition-transform duration-500 ease-out',
                 isMobileOpen ? 'translate-x-0' : '-translate-x-full'
             )}>
-                <SidebarContent onLinkClick={() => setIsMobileOpen(false)} />
+                <SidebarContent role={role} onLinkClick={() => setIsMobileOpen(false)} />
             </div>
 
             {/* Desktop Sidebar */}
@@ -258,7 +282,7 @@ export default function Sidebar() {
                     isCollapsed ? "w-[80px]" : "w-[260px]"
                 )}
             >
-                <SidebarContent isCollapsed={isCollapsed} />
+                <SidebarContent role={role} isCollapsed={isCollapsed} />
                 
                 {/* Collapse Toggle Button */}
                 <button

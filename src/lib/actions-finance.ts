@@ -5,6 +5,20 @@ import { supabase } from '@/lib/supabase/client';
 import { FinanceTransaction, FinanceCategory } from '@/lib/types/finance';
 import { revalidatePath } from 'next/cache';
 import { FinanceTransactionSchema, parseSchema } from '@/lib/schemas';
+import { requireRole } from '@/lib/auth/rbac';
+import { AuthorizationError } from '@/lib/auth/rbac-types';
+
+const FINANCE_ROLES = ['ADMIN', 'GERENTE'] as const;
+
+async function guardFinance() {
+  try {
+    await requireRole([...FINANCE_ROLES]);
+    return null;
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { success: false as const, message: e.message };
+    throw e;
+  }
+}
 
 export async function getFinanceTransactions(filters?: { startDate?: string, endDate?: string }): Promise<FinanceTransaction[]> {
   let query = supabase
@@ -45,6 +59,8 @@ export async function getFinanceCategories(): Promise<FinanceCategory[]> {
 }
 
 export async function createFinanceTransaction(data: Partial<FinanceTransaction>) {
+  const denied = await guardFinance();
+  if (denied) return denied;
   const validation = parseSchema(FinanceTransactionSchema, data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -67,6 +83,8 @@ export async function createFinanceTransaction(data: Partial<FinanceTransaction>
 }
 
 export async function updateFinanceTransaction(id: string, data: Partial<FinanceTransaction>) {
+  const denied = await guardFinance();
+  if (denied) return denied;
   const validation = parseSchema(FinanceTransactionSchema.partial(), data);
   if (!validation.success) return { success: false, message: validation.message };
 
@@ -87,6 +105,8 @@ export async function updateFinanceTransaction(id: string, data: Partial<Finance
 }
 
 export async function deleteFinanceTransaction(id: string) {
+  const denied = await guardFinance();
+  if (denied) return denied;
   try {
     const { error } = await supabase
       .from('lancamentos_financeiros')
@@ -106,6 +126,8 @@ export async function deleteFinanceTransaction(id: string) {
 // ── Categorias financeiras ────────────────────────────────────────────────────
 
 export async function createFinanceCategory(data: { nome: string; tipo: 'receita' | 'despesa' }) {
+  const denied = await guardFinance();
+  if (denied) return denied;
   if (!data.nome?.trim()) return { success: false, message: 'Nome é obrigatório.' };
   try {
     const { error } = await supabase
@@ -120,6 +142,8 @@ export async function createFinanceCategory(data: { nome: string; tipo: 'receita
 }
 
 export async function updateFinanceCategory(id: string, data: { nome: string; tipo: 'receita' | 'despesa' }) {
+  const denied = await guardFinance();
+  if (denied) return denied;
   if (!data.nome?.trim()) return { success: false, message: 'Nome é obrigatório.' };
   try {
     const { error } = await supabase
@@ -135,6 +159,8 @@ export async function updateFinanceCategory(id: string, data: { nome: string; ti
 }
 
 export async function deleteFinanceCategory(id: string) {
+  const denied = await guardFinance();
+  if (denied) return denied;
   try {
     const { error } = await supabase
       .from('categorias_financeiras')

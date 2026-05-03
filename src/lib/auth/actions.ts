@@ -57,20 +57,3 @@ export async function logout() {
   // Esta action pode redirecionar se necessário.
   redirect('/login');
 }
-
-export async function createAdminCustomToken() {
-  try {
-    const { auth: adminAuth } = getFirebaseAdmin();
-    // Identifica o usuário admin pelo email fixo
-    const adminEmail = 'admin@barbearia.com';
-    const user = await adminAuth.getUserByEmail(adminEmail);
-    
-    // Gera o token customizado usando o Firebase Admin SDK
-    const customToken = await adminAuth.createCustomToken(user.uid);
-    
-    return { success: true, token: customToken };
-  } catch (error: any) {
-    console.error("Erro ao gerar token customizado:", error);
-    return { success: false, message: "Falha ao gerar acesso rápido: " + error.message };
-  }
-}

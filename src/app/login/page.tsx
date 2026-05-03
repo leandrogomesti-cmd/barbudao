@@ -6,9 +6,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Shield, Loader2, Scissors, CheckCircle2 } from 'lucide-react';
-import { signInWithEmailAndPassword, signInWithCustomToken } from 'firebase/auth';
-import { createAdminCustomToken } from '@/lib/auth/actions';
+import { Loader2, Scissors, CheckCircle2 } from 'lucide-react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase/client';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -19,45 +18,6 @@ export default function LoginPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
-  const [isAdminPending, setIsAdminPending] = useState(false);
-
-  const handleAdminQuickLogin = async () => {
-    setIsAdminPending(true);
-    setError(null);
-    try {
-      const result = await createAdminCustomToken();
-      if (!result.success || !result.token) {
-        throw new Error(result.message || 'Erro ao obter acesso rápido.');
-      }
-
-      const userCredential = await signInWithCustomToken(auth, result.token);
-      const idToken = await userCredential.user.getIdToken();
-      localStorage.setItem('user_uid', userCredential.user.uid);
-
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(errorData || 'Falha ao criar sessão.');
-      }
-
-      router.push('/admin/dashboard');
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Erro no acesso rápido.');
-      toast({
-        variant: 'destructive',
-        title: 'Erro de Acesso Rápido',
-        description: err.message,
-      });
-    } finally {
-      setIsAdminPending(false);
-    }
-  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -231,34 +191,6 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-
-          <div className="relative py-4">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground font-medium">
-                Ou se preferir
-              </span>
-            </div>
-          </div>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full h-12 text-base font-semibold border-primary/20 hover:bg-primary/5 transition-all text-primary flex items-center justify-center gap-2 group"
-            disabled={isAdminPending || isPending}
-            onClick={handleAdminQuickLogin}
-          >
-            {isAdminPending ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <>
-                <Shield className="h-5 w-5 group-hover:scale-110 transition-transform" />
-                Acesso Administrador
-              </>
-            )}
-          </Button>
 
           <p className="text-center text-sm text-muted-foreground">
             Ainda não tem acesso?{' '}
