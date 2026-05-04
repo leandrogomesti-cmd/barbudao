@@ -235,6 +235,7 @@ export async function createCampaign(formData: FormData, userId: string): Promis
   const mission_type = formData.get('mission_type') as string;
   const mission_subtype = formData.get('sub_type') as string;
   const enviar_foto = formData.get('enviar_foto') === 'true';
+  const campaignImageFile = formData.get('campaignImage') as File | null;
 
   // Scheduling Extraction
   const schedulingEnabled = formData.get('schedulingEnabled') === 'true';
@@ -371,6 +372,28 @@ export async function createCampaign(formData: FormData, userId: string): Promis
       return { success: false, message: 'Nenhum contato válido foi encontrado para a campanha.' };
     }
 
+    // Upload campaign image to Supabase Storage if provided
+    let mediaUrl: string | undefined;
+    if (campaignImageFile instanceof File && campaignImageFile.size > 0) {
+      try {
+        const adminClient = getSupabaseAdmin();
+        const ext = campaignImageFile.name.split('.').pop() ?? 'jpg';
+        const path = `${userId}/${Date.now()}.${ext}`;
+        const buffer = Buffer.from(await campaignImageFile.arrayBuffer());
+        const { error: uploadError } = await adminClient.storage
+          .from('campaigns-media')
+          .upload(path, buffer, { contentType: campaignImageFile.type, upsert: false });
+        if (uploadError) {
+          console.error('[campaigns] Image upload error:', uploadError.message);
+        } else {
+          const { data: urlData } = adminClient.storage.from('campaigns-media').getPublicUrl(path);
+          mediaUrl = urlData?.publicUrl;
+        }
+      } catch (uploadErr: any) {
+        console.error('[campaigns] Image upload failed:', uploadErr.message);
+      }
+    }
+
     console.log('[DEBUG] Calling createCampaignCore...');
     const result = await createCampaignCore({
       name,
@@ -384,6 +407,7 @@ export async function createCampaign(formData: FormData, userId: string): Promis
       mission_type,
       mission_subtype,
       enviar_foto,
+      media_url: mediaUrl,
     });
 
     if (result.success) {
@@ -416,10 +440,11 @@ export interface CreateCampaignCoreInput {
   enviar_foto?: boolean;
   mission_type?: string;
   mission_subtype?: string;
+  media_url?: string;
 }
 
 export async function createCampaignCore(input: CreateCampaignCoreInput): Promise<{ success: boolean; message: string; campaignId?: string }> {
-  const { name, messageTemplates, instanceId, min_delay, max_delay, scheduling, contacts, userId, mission_type, mission_subtype } = input;
+  const { name, messageTemplates, instanceId, min_delay, max_delay, scheduling, contacts, userId, mission_type, mission_subtype, media_url } = input;
 
   // Basic Validation
   if (!name || messageTemplates.length === 0 || isNaN(min_delay) || isNaN(max_delay)) {
@@ -489,7 +514,8 @@ export async function createCampaignCore(input: CreateCampaignCoreInput): Promis
       horario_inicio: scheduling?.enabled ? scheduling.startTime : null,
       horario_fim: scheduling?.enabled ? scheduling.endTime : null,
       store_ids: storeIds,
-      created_by: userId
+      created_by: userId,
+      ...(media_url ? { media_url } : {}),
     };
 
     // Inserir campanha no Supabase

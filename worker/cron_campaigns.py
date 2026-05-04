@@ -339,9 +339,10 @@ def process_contact(campanha: dict, envio: dict, contact: dict, templates: list)
             if k != 'nome':
                 final_msg = final_msg.replace(f'{{{k}}}', str(v))
     
-    # 4. Enviar mensagem via Chatwoot
-    logger.debug(f"Enviando mensagem para {clean_phone} via Chatwoot...")
-    send_res = send_chatwoot_message(clean_phone, c_name, final_msg)
+    # 4. Enviar mensagem via Chatwoot (com imagem se campaign tiver media_url)
+    campaign_media_url = campanha.get('media_url')
+    logger.debug(f"Enviando mensagem para {clean_phone} via Chatwoot... (imagem: {'sim' if campaign_media_url else 'não'})")
+    send_res = send_chatwoot_message(clean_phone, c_name, final_msg, media_url=campaign_media_url)
     
     if send_res['success']:
         logger.success(f"✅ Enviado para {clean_phone}")
