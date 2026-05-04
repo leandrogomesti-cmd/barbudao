@@ -4,6 +4,7 @@ import NewCampaignForm from './new-campaign-form';
 import { Suspense } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstances, getContacts, getUserPlan, getTodaysSendsCount, getUserSettings } from '@/lib/actions';
+import { getEmpresas } from '@/lib/actions-empresas';
 import { getFirebaseAdmin } from '@/lib/firebase/admin';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -59,6 +60,7 @@ export default async function NewCampaignPage() {
     userSettings,
     userPlan,
     todaysSends,
+    empresas,
   ] = await Promise.all([
     getInstances(userId),
     getContacts(userId),
@@ -68,7 +70,8 @@ export default async function NewCampaignPage() {
     ),
     getUserSettings(userId).then(settings =>
       settings?.subscriptionsEnabled ? getTodaysSendsCount(userId) : 0
-    )
+    ),
+    getEmpresas(),
   ]);
 
   return (
@@ -89,6 +92,7 @@ export default async function NewCampaignPage() {
               initialUserSettings={userSettings}
               initialUserPlan={userPlan}
               initialTodaysSends={todaysSends}
+              initialEmpresas={empresas}
             />
           </Suspense>
         </CardContent>

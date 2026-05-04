@@ -129,9 +129,10 @@ def _chatwoot_resolve_conversation(contact_id: int, phone_digits: str) -> int | 
 
     return None
 
-def send_chatwoot_message(phone: str, name: str, message: str) -> dict:
+def send_chatwoot_message(phone: str, name: str, message: str, media_url: str = None) -> dict:
     """
     Envia mensagem WhatsApp via Chatwoot (fluxo 3-passos canônico).
+    Se media_url for fornecido, baixa a imagem e envia como anexo multipart.
     """
     normalized = normalize_brazilian_phone(phone)
     base = _chatwoot_base_url()
@@ -147,14 +148,39 @@ def send_chatwoot_message(phone: str, name: str, message: str) -> dict:
     if not conv_id:
         return {"success": False, "message": f"Falha ao resolver conversa para contactId={contact_id}"}
 
-    # Passo 3 — Mensagem
+    # Passo 3 — Mensagem (com ou sem imagem)
+    url = f"{base}/conversations/{conv_id}/messages"
     try:
-        resp = requests.post(
-            f"{base}/conversations/{conv_id}/messages",
-            headers=headers,
-            json={"content": message, "message_type": "outgoing", "private": False},
-            timeout=15,
-        )
+        if media_url:
+            # Baixa a imagem e envia via multipart/form-data
+            try:
+                img_resp = requests.get(media_url, timeout=15)
+                img_resp.raise_for_status()
+            except Exception as dl_err:
+                logger.warning(f"⚠️ Não foi possível baixar imagem da campanha ({media_url}): {dl_err}. Enviando só texto.")
+                media_url = None
+
+        if media_url and img_resp.ok:
+            content_type = img_resp.headers.get("Content-Type", "image/jpeg")
+            ext = content_type.split("/")[-1].split(";")[0] or "jpg"
+            filename = f"campanha.{ext}"
+            # Cabeçalhos sem Content-Type (multipart define automaticamente)
+            multipart_headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+            resp = requests.post(
+                url,
+                headers=multipart_headers,
+                data={"content": message, "message_type": "outgoing", "private": "false"},
+                files={"attachments[]": (filename, img_resp.content, content_type)},
+                timeout=20,
+            )
+        else:
+            resp = requests.post(
+                url,
+                headers=headers,
+                json={"content": message, "message_type": "outgoing", "private": False},
+                timeout=15,
+            )
+
         if resp.status_code in (200, 201):
             return {"success": True, "data": resp.json()}
         return {"success": False, "message": f"HTTP {resp.status_code}: {resp.text}"}

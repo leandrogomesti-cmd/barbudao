@@ -9,9 +9,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { createCampaign } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertCircle, PlusCircle, X } from 'lucide-react';
+import { Loader2, AlertCircle, PlusCircle, X, ImageIcon, Building2 } from 'lucide-react';
 import { suggestCampaignMessage } from '@/ai/flows/suggest-campaign-message';
 import { WhatsAppInstance, UserPlanInfo, UserSettings, Contact } from '@/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EmpresaERP } from '@/lib/types/business';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,6 +29,7 @@ interface NewCampaignFormProps {
   initialUserSettings: UserSettings | null;
   initialUserPlan: UserPlanInfo | null;
   initialTodaysSends: number;
+  initialEmpresas?: EmpresaERP[];
 }
 
 export default function NewCampaignForm({
@@ -36,6 +39,7 @@ export default function NewCampaignForm({
   initialUserSettings,
   initialUserPlan,
   initialTodaysSends,
+  initialEmpresas = [],
 }: NewCampaignFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -67,6 +71,13 @@ export default function NewCampaignForm({
   const [enviarFoto, setEnviarFoto] = useState(false);
   const [missionType, setMissionType] = useState('Outros');
   const [subType, setSubType] = useState('');
+
+  // Unit filter for contact list
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState('');
+
+  // Campaign image attachment
+  const [campaignImageFile, setCampaignImageFile] = useState<File | null>(null);
+  const [campaignImagePreview, setCampaignImagePreview] = useState<string>('');
 
   const daysOptions = [
     { label: 'Dom', value: 0 },
@@ -146,11 +157,30 @@ export default function NewCampaignForm({
 
   const handleToggleSelectAll = (checked: boolean) => {
     if (checked) {
-      const allIds = initialContacts.map(c => c.id!);
-      setSelectedContactIds(new Set(allIds));
+      const ids = filteredContacts.map(c => c.id!);
+      setSelectedContactIds(new Set(ids));
     } else {
       setSelectedContactIds(new Set());
     }
+  };
+
+  const handleCampaignImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: 'destructive', title: 'Imagem muito grande', description: 'Máximo 5MB para WhatsApp.' });
+      e.target.value = '';
+      return;
+    }
+    if (campaignImagePreview) URL.revokeObjectURL(campaignImagePreview);
+    setCampaignImageFile(file);
+    setCampaignImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleRemoveCampaignImage = () => {
+    if (campaignImagePreview) URL.revokeObjectURL(campaignImagePreview);
+    setCampaignImageFile(null);
+    setCampaignImagePreview('');
   };
 
   const handleToggleContact = (id: string) => {
@@ -190,9 +220,13 @@ export default function NewCampaignForm({
     }
 
     // Mission Options
-    // Mission Options
     formData.append('enviar_foto', String(enviarFoto));
     formData.append('sub_type', subType);
+
+    // Campaign image
+    if (campaignImageFile) {
+      formData.set('campaignImage', campaignImageFile);
+    }
 
     startTransition(async () => {
       const result = await createCampaign(formData, userId);
@@ -231,6 +265,11 @@ export default function NewCampaignForm({
       }
     })
   }
+
+  // Contacts filtered by selected unit (empty = all)
+  const filteredContacts = selectedUnitFilter
+    ? allContacts.filter(c => c.storeIds?.includes(selectedUnitFilter))
+    : allContacts;
 
   const totalContacts = contactSource === 'csv' ? fileContactsCount : selectedContactIds.size;
   const subscriptionsEnabled = userSettings?.subscriptionsEnabled;
@@ -414,6 +453,45 @@ export default function NewCampaignForm({
         </div>
       </div>
 
+      {/* Imagem da Campanha */}
+      <div className="space-y-3 rounded-lg border p-4">
+        <div className="flex items-center gap-2">
+          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+          <Label className="font-medium">Imagem da Campanha (opcional)</Label>
+        </div>
+        <p className="text-xs text-muted-foreground pl-6">
+          Anexe uma imagem (PNG, JPEG ou WebP, máx. 5MB) que será enviada junto com a mensagem no WhatsApp.
+        </p>
+        {campaignImagePreview ? (
+          <div className="relative w-40 pl-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={campaignImagePreview} alt="Preview" className="rounded-md border object-cover w-full aspect-video" />
+            <button
+              type="button"
+              onClick={handleRemoveCampaignImage}
+              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5 shadow hover:opacity-90 transition-opacity"
+              aria-label="Remover imagem"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+            <p className="text-[10px] text-muted-foreground mt-1 truncate">{campaignImageFile?.name}</p>
+          </div>
+        ) : (
+          <div className="pl-6">
+            <label className="cursor-pointer inline-flex items-center gap-2 rounded-md border border-dashed px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors">
+              <ImageIcon className="h-4 w-4" />
+              Escolher imagem
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="sr-only"
+                onChange={handleCampaignImageChange}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+
       {/* Variações de Mensagem */}
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
@@ -448,7 +526,25 @@ export default function NewCampaignForm({
 
       {/* SELEÇÃO DE CONTATOS (Apenas Lista) */}
       <div className="grid gap-2">
-        <Label>Contatos</Label>
+        <div className="flex items-center justify-between">
+          <Label>Contatos</Label>
+          {initialEmpresas.length > 0 && (
+            <Select value={selectedUnitFilter || 'all'} onValueChange={v => setSelectedUnitFilter(v === 'all' ? '' : v)}>
+              <SelectTrigger className="h-8 w-[200px] text-xs">
+                <Building2 className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue placeholder="Todas as unidades" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as unidades</SelectItem>
+                {initialEmpresas.filter(e => e.ativo).map(e => (
+                  <SelectItem key={String(e.id_loja)} value={String(e.id_loja)}>
+                    {e.nome_fantasia}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
         <Card>
           <CardContent className="p-0">
             <ScrollArea className="h-72">
@@ -458,17 +554,18 @@ export default function NewCampaignForm({
                     <TableHead className="w-[50px]">
                       <Checkbox
                         onCheckedChange={(checked) => handleToggleSelectAll(Boolean(checked))}
-                        checked={allContacts.length > 0 && selectedContactIds.size === allContacts.length}
+                        checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedContactIds.has(c.id!))}
                         aria-label="Selecionar todos"
                       />
                     </TableHead>
                     <TableHead>Nome</TableHead>
+                    <TableHead>Unidade</TableHead>
                     <TableHead>Telefone</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {allContacts.length > 0 ? (
-                    allContacts.map((contact) => (
+                  {filteredContacts.length > 0 ? (
+                    filteredContacts.map((contact) => (
                       <TableRow key={contact.id}>
                         <TableCell>
                           <Checkbox
@@ -478,25 +575,29 @@ export default function NewCampaignForm({
                           />
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
                             <span>{contact.name}</span>
-                            <div className="flex gap-1 mt-1">
-                              {contact.source === 'erp' && (
-                                <Badge variant="secondary" className="w-fit text-[10px] px-1 py-0 h-5">ERP</Badge>
-                              )}
-                              {contact.storeNames && contact.storeNames.length > 0 && (
-                                <Badge variant="outline" className="w-fit text-[10px] px-1 py-0 h-5 border-blue-200 bg-blue-50 text-blue-700">
-                                  {contact.storeNames[0]}
-                                </Badge>
-                              )}
-                            </div>
+                            {contact.source === 'erp' && (
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-5">ERP</Badge>
+                            )}
                           </div>
                         </TableCell>
-                        <TableCell>{contact.phone}</TableCell>
+                        <TableCell>
+                          {contact.storeNames && contact.storeNames.length > 0 ? (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-5 border-blue-200 bg-blue-50 text-blue-700">
+                              {contact.storeNames[0]}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">{contact.phone}</TableCell>
                       </TableRow>
                     ))
                   ) : (
-                    <TableRow><TableCell colSpan={3} className="text-center h-24">Nenhum contato salvo. Adicione contatos na página "Contatos".</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4} className="text-center h-24 text-muted-foreground text-sm">
+                      {selectedUnitFilter ? 'Nenhum contato nesta unidade.' : 'Nenhum contato salvo. Adicione contatos na página "Contatos".'}
+                    </TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

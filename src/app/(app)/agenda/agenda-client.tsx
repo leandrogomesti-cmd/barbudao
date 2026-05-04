@@ -39,7 +39,10 @@ import {
   CalendarRange,
   UserCheck,
   Bell,
+  Filter,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { updateAppointmentTime, updateAppointmentStatus, createBlock, deleteAppointment, finalizeAppointment, createAppointment, getAppointments, searchContactsForAgenda, createQuickContact } from '@/lib/actions-agenda';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -82,6 +85,16 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
   const [paymentMethod, setPaymentMethod] = useState<string>('Dinheiro');
   const [finalizeValor, setFinalizeValor] = useState<string>('');
   const [finalizeProfessional, setFinalizeProfessional] = useState<string>('Indiferente');
+
+  // staffVisibilityFilter: Set of staff IDs to display. Empty = show all.
+  const [staffVisibilityFilter, setStaffVisibilityFilter] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('agenda-visible-staff');
+      if (saved) setStaffVisibilityFilter(new Set(JSON.parse(saved)));
+    } catch {}
+  }, []);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [detailAppt, setDetailAppt] = useState<Appointment | null>(null);
@@ -134,6 +147,32 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
     return names;
   }, [visibleStaff]);
   const visibleStaffIds = useMemo(() => new Set(visibleStaff.map(s => s.id).filter(Boolean)), [visibleStaff]);
+
+  // Applies the user-chosen visibility filter on top of the role-based filter.
+  const displayedStaff = useMemo(() => {
+    if (staffVisibilityFilter.size === 0) return visibleStaff;
+    return visibleStaff.filter(s => staffVisibilityFilter.has(s.id));
+  }, [visibleStaff, staffVisibilityFilter]);
+
+  const handleStaffFilterChange = (staffId: string) => {
+    setStaffVisibilityFilter(prev => {
+      let next: Set<string>;
+      if (prev.size === 0) {
+        // All currently visible → deselecting one means "show everyone except this"
+        next = new Set(visibleStaff.filter(s => s.id !== staffId).map(s => s.id));
+      } else {
+        next = new Set(prev);
+        if (next.has(staffId)) {
+          next.delete(staffId);
+          if (next.size === 0) next = new Set(); // back to "show all"
+        } else {
+          next.add(staffId);
+        }
+      }
+      try { localStorage.setItem('agenda-visible-staff', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
 
   // Agendamentos sem profissional definido OU cujo profissional não tem coluna visível
   // Exclui os que já fazem match por profissional_id (evita duplicação)
@@ -606,6 +645,51 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
               </SelectContent>
             </Select>
           )}
+          {canManage && visibleStaff.length > 1 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn('h-9 text-xs', staffVisibilityFilter.size > 0 && 'border-primary text-primary bg-primary/5')}
+                >
+                  <Filter className="h-3.5 w-3.5 mr-1.5" />
+                  {staffVisibilityFilter.size === 0
+                    ? 'Todos'
+                    : `${staffVisibilityFilter.size} prof.`}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-56 p-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Profissionais</p>
+                    {staffVisibilityFilter.size > 0 && (
+                      <button
+                        className="text-[10px] text-primary hover:underline"
+                        onClick={() => {
+                          setStaffVisibilityFilter(new Set());
+                          try { localStorage.removeItem('agenda-visible-staff'); } catch {}
+                        }}
+                      >
+                        Mostrar todos
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1 max-h-52 overflow-y-auto">
+                    {visibleStaff.map(s => (
+                      <label key={s.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-muted cursor-pointer select-none">
+                        <Checkbox
+                          checked={staffVisibilityFilter.size === 0 || staffVisibilityFilter.has(s.id)}
+                          onCheckedChange={() => handleStaffFilterChange(s.id)}
+                        />
+                        <span className="text-sm truncate">{s.apelido || s.nome}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
           {newApptAlert > 0 && (
             <Button size="sm" variant="outline" className="relative border-amber-400 text-amber-700 hover:bg-amber-50"
               onClick={() => { setNewApptAlert(0); handleSync(); }}>
@@ -699,7 +783,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
       })()}
 
       {/* ── Visão Diária ───────────────────────────────────────────── */}
-      {viewMode === 'day' && <div className="flex-1 overflow-auto bg-card rounded-xl border border-border/50 shadow-sm relative">
+      {viewMode === 'day' && <div className="flex-1 overflow-y-auto overflow-x-hidden bg-card rounded-xl border border-border/50 shadow-sm relative">
         {/* Current Time Line */}
         {isSameDay(selectedDate, new Date()) && new Date().getHours() >= 8 && new Date().getHours() <= 20 && (
           <div 
@@ -714,7 +798,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
         )}
 
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="inline-flex min-w-full">
+          <div className="flex w-full">
             {/* Hour Column */}
             <div className="w-20 sticky left-0 bg-muted/80 backdrop-blur-sm z-20 border-r border-border/50">
               <div className="h-12 border-b border-border/50 flex items-center justify-center font-bold text-[10px] uppercase tracking-widest text-muted-foreground bg-muted/50">
@@ -728,7 +812,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
             </div>
 
             {/* Waitlist Column */}
-            <div className="min-w-[220px] border-r border-border/50 flex-shrink-0 bg-orange-50/20">
+            <div className="w-44 shrink-0 border-r border-border/50 bg-orange-50/20">
               <div className="h-12 border-b border-border/50 flex items-center justify-center gap-2 font-bold bg-orange-50/50 sticky top-0 z-10 backdrop-blur-sm">
                 <ListOrdered className="h-4 w-4 text-orange-500" />
                 <span className="text-orange-800 text-xs uppercase tracking-wider">Fila de Espera</span>
@@ -793,7 +877,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
             </div>
 
             {/* Professional Columns */}
-            {visibleStaff.map(member => {
+            {displayedStaff.map(member => {
               // Matches by nome, apelido OR profissional_id (tolerates name mismatches between N8N and cadastro)
               const matchesMember = (a: Appointment) =>
                 a.profissional === member.nome ||
@@ -804,7 +888,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
               );
               const memberFinalized = memberAppts.filter(a => a.status_agendamento === 'Finalizado').length;
               return (
-              <div key={member.id} className="min-w-[260px] border-r border-border/50 flex-1">
+              <div key={member.id} className="flex-1 min-w-0 border-r border-border/50">
                 <div className="h-12 border-b border-border/50 flex flex-col items-center justify-center bg-muted/30 sticky top-0 z-10 backdrop-blur-sm">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-foreground uppercase tracking-wider">{member.apelido || member.nome}</span>
@@ -905,7 +989,7 @@ export function AgendaClient({ initialAppointments, staff, currentStaff, units =
 
             {/* Coluna IA / Indiferente — agendamentos sem profissional definido */}
             {indiferenteAppointments.length > 0 && (
-              <div className="min-w-[260px] border-r border-border/50 flex-1">
+              <div className="flex-1 min-w-0 border-r border-border/50">
                 <div className="h-12 border-b border-border/50 flex flex-col items-center justify-center bg-amber-50/60 sticky top-0 z-10 backdrop-blur-sm">
                   <span className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
                     <AlertCircle className="h-3.5 w-3.5" />
