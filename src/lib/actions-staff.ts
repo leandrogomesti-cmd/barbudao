@@ -252,9 +252,10 @@ async function buildCommissionReportForStaff(
   if (staffError || !staff) return null;
 
   // Atendimentos finalizados no período
+  // Seleciona tanto 'unidade' (coluna real do app) quanto 'unidade_id' (coluna legada/n8n)
   const { data: appts, error: apptError } = await supabase
     .from('controle_atendimentos')
-    .select('id, inicio_agendado, servico, servico_id, unidade_id, nome_cliente, forma_pagamento, valor_cobrado')
+    .select('id, inicio_agendado, servico, servico_id, unidade, unidade_id, nome_cliente, forma_pagamento, valor_cobrado')
     .eq('profissional_id', staffId)
     .eq('status_agendamento', 'Finalizado')
     .gte('inicio_agendado', startDate)
@@ -262,6 +263,23 @@ async function buildCommissionReportForStaff(
     .order('inicio_agendado', { ascending: false });
 
   if (apptError) throw apptError;
+
+  // Buscar preços de serviços para usar como fallback quando valor_cobrado é null
+  const servicoIdsComPrecoNulo = [...new Set(
+    (appts ?? [])
+      .filter(a => a.valor_cobrado == null && a.servico_id)
+      .map(a => a.servico_id as string)
+  )];
+  const precoPorServico: Record<string, number> = {};
+  if (servicoIdsComPrecoNulo.length > 0) {
+    const { data: servicos } = await supabase
+      .from('servicos')
+      .select('id, preco_venda')
+      .in('id', servicoIdsComPrecoNulo);
+    for (const s of servicos ?? []) {
+      if (s.preco_venda) precoPorServico[s.id] = Number(s.preco_venda);
+    }
+  }
 
   // Buscar comissões configuradas para este profissional (todas as unidades)
   const { data: comissoes } = await supabase
@@ -288,8 +306,13 @@ async function buildCommissionReportForStaff(
   let comissaoServico = 0;
 
   for (const appt of appts ?? []) {
-    const preco = Number(appt.valor_cobrado ?? 0);
-    const unidadeAtendimento = appt.unidade_id ?? unidadePadrao;
+    // Usa valor_cobrado registrado; se nulo, usa preço de tabela do serviço como estimativa
+    const precoBruto = appt.valor_cobrado != null
+      ? Number(appt.valor_cobrado)
+      : (appt.servico_id ? (precoPorServico[appt.servico_id] ?? 0) : 0);
+    const preco = Number.isFinite(precoBruto) ? precoBruto : 0;
+    // Usa 'unidade' (coluna app) ou 'unidade_id' (legado/n8n) ou unidade_padrao como fallback
+    const unidadeAtendimento = (appt as any).unidade ?? appt.unidade_id ?? unidadePadrao;
     const servicoId = appt.servico_id;
 
     // Prioridade do percentual (alinhada ao plano de correção):

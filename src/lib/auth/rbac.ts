@@ -5,9 +5,36 @@ import { verifySessionToken } from '@/lib/auth/verify-session';
 import { supabase } from '@/lib/supabase/client';
 import { AuthorizationError, type CurrentUser, type Role, RESTRICTED_PATHS_FOR_PROFISSIONAL } from '@/lib/auth/rbac-types';
 
+function ownerEmails(): string[] {
+  return (process.env.OWNER_EMAILS ?? '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Indica se há sessão Firebase válida (sem exigir registro em profissionais).
+ * Útil para distinguir "não autenticado" de "autenticado sem perfil".
+ */
+export async function getSessionEmail(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get('firebase-session-token')?.value;
+    if (!sessionToken) return null;
+    const decoded = await verifySessionToken(sessionToken);
+    return decoded?.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Lê a sessão Firebase do cookie e busca o staff correspondente em `profissionais`.
- * Retorna null se não autenticado ou sem registro de staff ativo.
+ * Retorna null se não autenticado.
+ *
+ * Se autenticado mas sem registro em `profissionais`:
+ *   - email listado em OWNER_EMAILS → role ADMIN sintético (acesso de dono).
+ *   - caso contrário → null (chamador decide redirecionar para /access-denied).
  */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   try {
@@ -25,16 +52,34 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       .eq('ativo', true)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (!error && data) {
+      return {
+        uid: decoded.uid,
+        email: decoded.email,
+        staffId: data.id,
+        nome: data.nome,
+        role: (data.perfil_acesso ?? 'PROFISSIONAL') as Role,
+        unidade_padrao: data.unidade_padrao ?? undefined,
+      };
+    }
 
-    return {
-      uid: decoded.uid,
-      email: decoded.email,
-      staffId: data.id,
-      nome: data.nome,
-      role: (data.perfil_acesso ?? 'PROFISSIONAL') as Role,
-      unidade_padrao: data.unidade_padrao ?? undefined,
-    };
+    // Sem staff record: aplica fallback OWNER_EMAILS
+    const owners = ownerEmails();
+    if (owners.includes(decoded.email.toLowerCase())) {
+      console.warn(
+        `[RBAC] Usuário ${decoded.email} sem registro em profissionais — aplicando role ADMIN via OWNER_EMAILS.`
+      );
+      return {
+        uid: decoded.uid,
+        email: decoded.email,
+        staffId: '',
+        nome: decoded.email,
+        role: 'ADMIN' as Role,
+        unidade_padrao: undefined,
+      };
+    }
+
+    return null;
   } catch (err) {
     console.error('[RBAC] getCurrentUser falhou:', err);
     return null;
