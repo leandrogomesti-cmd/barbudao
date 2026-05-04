@@ -15,6 +15,8 @@ export interface Staff {
   comissao_servico?: number;   // Fallback global (porcentagem)
   comissao_produto?: number;   // Fallback global (porcentagem)
   prolabore_fixo?: number;     // Valor fixo em R$
+  /** UUID da tenant à qual este profissional pertence. */
+  tenant_id?: string;
 }
 
 export interface ProfissionalServicoComissao {

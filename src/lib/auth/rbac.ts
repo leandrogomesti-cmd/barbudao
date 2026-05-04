@@ -3,10 +3,24 @@
 import { cookies } from 'next/headers';
 import { verifySessionToken } from '@/lib/auth/verify-session';
 import { supabase } from '@/lib/supabase/client';
-import { AuthorizationError, type CurrentUser, type Role, RESTRICTED_PATHS_FOR_PROFISSIONAL } from '@/lib/auth/rbac-types';
+import {
+  AuthorizationError,
+  type CurrentUser,
+  type Role,
+  RESTRICTED_PATHS_FOR_PROFISSIONAL,
+  BARBERCOFFEE_TENANT_ID,
+} from '@/lib/auth/rbac-types';
 
 function ownerEmails(): string[] {
   return (process.env.OWNER_EMAILS ?? '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Emails com role de plataforma super_admin (gestão de todas as tenants). */
+function superAdminEmails(): string[] {
+  return (process.env.SUPER_ADMIN_EMAILS ?? '')
     .split(',')
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
@@ -45,9 +59,24 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     const decoded = await verifySessionToken(sessionToken);
     if (!decoded?.email) return null;
 
+    const normalizedEmail = decoded.email.toLowerCase();
+
+    // 1. Super-admin de plataforma tem precedência (sem registro em profissionais necessário)
+    if (superAdminEmails().includes(normalizedEmail)) {
+      return {
+        uid: decoded.uid,
+        email: decoded.email,
+        staffId: '',
+        nome: decoded.email,
+        role: 'super_admin' as Role,
+        tenant_id: undefined, // super_admin acessa todas as tenants
+      };
+    }
+
+    // 2. Busca registro em profissionais (inclui tenant_id)
     const { data, error } = await supabase
       .from('profissionais')
-      .select('id, nome, email, perfil_acesso, unidade_padrao')
+      .select('id, nome, email, perfil_acesso, unidade_padrao, tenant_id')
       .eq('email', decoded.email)
       .eq('ativo', true)
       .maybeSingle();
@@ -60,14 +89,15 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
         nome: data.nome,
         role: (data.perfil_acesso ?? 'PROFISSIONAL') as Role,
         unidade_padrao: data.unidade_padrao ?? undefined,
+        tenant_id: data.tenant_id ?? BARBERCOFFEE_TENANT_ID,
       };
     }
 
-    // Sem staff record: aplica fallback OWNER_EMAILS
+    // 3. Fallback OWNER_EMAILS → ADMIN da tenant BarberCoffee
     const owners = ownerEmails();
-    if (owners.includes(decoded.email.toLowerCase())) {
+    if (owners.includes(normalizedEmail)) {
       console.warn(
-        `[RBAC] Usuário ${decoded.email} sem registro em profissionais — aplicando role ADMIN via OWNER_EMAILS.`
+        `[RBAC] Usuário ${decoded.email} sem registro em profissionais — aplicando role ADMIN via OWNER_EMAILS (tenant BarberCoffee).`
       );
       return {
         uid: decoded.uid,
@@ -75,6 +105,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
         staffId: '',
         nome: decoded.email,
         role: 'ADMIN' as Role,
+        tenant_id: BARBERCOFFEE_TENANT_ID,
         unidade_padrao: undefined,
       };
     }
@@ -112,6 +143,7 @@ export async function checkRole(allowed: Role[]): Promise<CurrentUser | null> {
 export async function canAccessPath(pathname: string): Promise<boolean> {
   const user = await getCurrentUser();
   if (!user) return false;
+  if (user.role === 'super_admin') return true; // super_admin acessa tudo
   if (user.role === 'ADMIN' || user.role === 'GERENTE') return true;
   if (user.role === 'RECEPCAO') {
     return !['/admin', '/staff', '/services', '/inventory', '/missions', '/settings'].some(p =>
@@ -119,4 +151,14 @@ export async function canAccessPath(pathname: string): Promise<boolean> {
     );
   }
   return !RESTRICTED_PATHS_FOR_PROFISSIONAL.some(p => pathname.startsWith(p));
+}
+
+/**
+ * Retorna o tenant_id do usuário atual.
+ * super_admin recebe undefined (sem restrição de tenant).
+ * Útil para filtrar queries no padrão tenant-aware.
+ */
+export async function getCurrentTenantId(): Promise<string | undefined> {
+  const user = await getCurrentUser();
+  return user?.tenant_id;
 }
