@@ -309,7 +309,9 @@ export async function finalizeAppointment(id: string | number, paymentMethod: st
     // Preparar dados para update
     const updateData: any = {
       status_agendamento: 'Finalizado',
-      forma_pagamento: paymentMethod
+      forma_pagamento: paymentMethod,
+      ...(valor && valor > 0 ? { valor_cobrado: valor } : {}),
+      ...(service?.id ? { servico_id: service.id } : {}),
     };
 
     if (profissionalNome && profissionalNome !== '' && profissionalNome !== 'Indiferente') {

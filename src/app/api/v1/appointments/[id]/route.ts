@@ -52,6 +52,7 @@ export async function PATCH(
       'unidade', 'id_evento_google', 'forma_pagamento',
       'id_conversa_chatwoot', 'ultima_interacao_em',
       'lembrete_enviado_em', 'followup_enviado_em',
+      'valor_cobrado', 'servico_id', 'profissional_id',
     ];
 
     const updateData: Record<string, any> = {};
