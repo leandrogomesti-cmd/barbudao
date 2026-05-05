@@ -99,4 +99,6 @@ export interface EmpresaERP {
   cidade?: string;
   ativo: boolean;
   created_at: string;
+  /** UUID da tenant à qual esta unidade pertence. */
+  tenant_id?: string;
 }
