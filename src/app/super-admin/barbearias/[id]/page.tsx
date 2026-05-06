@@ -1,13 +1,13 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { getTenantById } from '@/lib/actions/tenants';
+import { getTenantById, switchToTenant } from '@/lib/actions/tenants';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ArrowLeft, Building2, Users, Settings } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Settings, LogIn } from 'lucide-react';
 import TenantEditForm from './tenant-edit-form';
 
 interface Props { params: Promise<{ id: string }> }
@@ -22,20 +22,33 @@ export default async function TenantDetailPage({ params }: Props) {
     { data: unidades },
     { data: profissionais },
   ] = await Promise.all([
-    supabase.from('empresas_erp').select('id, nome_fantasia, cidade, ativo').eq('tenant_id', id),
+    supabase.from('empresas_erp').select('id_loja, nome_fantasia, cidade, ativo').eq('tenant_id', id),
     supabase.from('profissionais').select('id, nome, perfil_acesso, ativo').eq('tenant_id', id).order('nome'),
   ]);
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/super-admin/barbearias"><ArrowLeft className="h-4 w-4 mr-1" /> Voltar</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-black">{tenant.nome}</h1>
-          <p className="text-xs text-muted-foreground font-mono">{tenant.slug} · {id}</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/super-admin/barbearias"><ArrowLeft className="h-4 w-4 mr-1" /> Voltar</Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl font-black">{tenant.nome}</h1>
+            <p className="text-xs text-muted-foreground font-mono">{tenant.slug} · {id}</p>
+          </div>
         </div>
+
+        {/* Botão: entra na tenant como ADMIN */}
+        <form action={async () => {
+          'use server';
+          await switchToTenant(id);
+        }}>
+          <Button type="submit" className="gap-2">
+            <LogIn className="h-4 w-4" />
+            Entrar nesta barbearia
+          </Button>
+        </form>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -53,7 +66,7 @@ export default async function TenantDetailPage({ params }: Props) {
           <CardContent>
             <div className="space-y-2">
               {(unidades ?? []).map(u => (
-                <div key={u.id} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
+                <div key={u.id_loja ?? u.nome_fantasia} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
                   <div>
                     <p className="font-medium">{u.nome_fantasia}</p>
                     {u.cidade && <p className="text-xs text-muted-foreground">{u.cidade}</p>}

@@ -63,13 +63,40 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
     // 1. Super-admin de plataforma tem precedência (sem registro em profissionais necessário)
     if (superAdminEmails().includes(normalizedEmail)) {
+      // Verifica se o super_admin selecionou uma tenant para operar (cookie 'sa_tenant')
+      const selectedTenantId = cookieStore.get('sa_tenant')?.value;
+      if (selectedTenantId) {
+        // Busca o registro de profissional criado pelo switchToTenant na tenant selecionada
+        const { data: prof } = await supabase
+          .from('profissionais')
+          .select('id, nome, perfil_acesso, unidade_padrao')
+          .eq('email', normalizedEmail)
+          .eq('tenant_id', selectedTenantId)
+          .eq('ativo', true)
+          .maybeSingle();
+
+        if (prof) {
+          return {
+            uid: decoded.uid,
+            email: decoded.email,
+            staffId: prof.id,
+            nome: prof.nome,
+            role: (prof.perfil_acesso ?? 'ADMIN') as Role,
+            unidade_padrao: prof.unidade_padrao ?? undefined,
+            tenant_id: selectedTenantId,
+            is_super_admin_impersonating: true,
+          };
+        }
+      }
+
+      // Sem cookie ou sem registro: retorna como super_admin puro
       return {
         uid: decoded.uid,
         email: decoded.email,
         staffId: '',
         nome: decoded.email,
         role: 'super_admin' as Role,
-        tenant_id: undefined, // super_admin acessa todas as tenants
+        tenant_id: undefined,
       };
     }
 

@@ -1,10 +1,15 @@
 'use server';
 
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
-import { requireRole } from '@/lib/auth/rbac';
+import { requireRole, getSessionEmail } from '@/lib/auth/rbac';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import type { Tenant, TenantSummary, CreateTenantInput } from '@/lib/types/tenant';
 import { BARBERCOFFEE_TENANT_ID } from '@/lib/auth/rbac-types';
+
+/** Nome do cookie que indica qual tenant o super_admin está operando. */
+const SA_TENANT_COOKIE = 'sa_tenant';
 
 const adminClient = () => getSupabaseAdmin();
 
@@ -26,7 +31,7 @@ export async function listTenants(): Promise<TenantSummary[]> {
   const summaries = await Promise.all(
     (tenants ?? []).map(async (t) => {
       const [{ count: numUnidades }, { count: numProfissionais }] = await Promise.all([
-        supabase.from('empresas_erp').select('id', { count: 'exact', head: true }).eq('tenant_id', t.id),
+        supabase.from('empresas_erp').select('id_loja', { count: 'exact', head: true }).eq('tenant_id', t.id),
         supabase.from('profissionais').select('id', { count: 'exact', head: true }).eq('tenant_id', t.id).eq('ativo', true),
       ]);
       return {
@@ -153,7 +158,7 @@ export async function createTenant(
     const { data: unidades, error: uniErr } = await supabase
       .from('empresas_erp')
       .insert(unidadesPayload)
-      .select('id, id_loja, nome_fantasia');
+      .select('id_loja, nome_fantasia');
     if (uniErr) throw new Error(`Unidades: ${uniErr.message}`);
 
     const primeiraUnidade = unidades?.[0];
@@ -210,4 +215,82 @@ export async function createTenant(
     console.error('[createTenant] Erro:', err);
     return { success: false, message: err.message ?? 'Erro desconhecido ao criar tenant.' };
   }
+}
+
+// ─── Impersonação de tenant pelo super_admin ──────────────────────────────────
+
+/**
+ * Super-admin "entra" em uma tenant como ADMIN.
+ * Cria (ou reativa) um registro em profissionais para o e-mail do super_admin
+ * dentro dessa tenant e define o cookie 'sa_tenant'.
+ * Após isso, getCurrentUser() retorna a identidade ADMIN dentro da tenant.
+ */
+export async function switchToTenant(tenantId: string): Promise<void> {
+  const user = await requireRole(['super_admin']);
+
+  const supabase = adminClient();
+
+  // Valida que a tenant existe
+  const { data: tenant, error: tErr } = await supabase
+    .from('tenants')
+    .select('id, nome')
+    .eq('id', tenantId)
+    .single();
+  if (tErr || !tenant) throw new Error('Tenant não encontrada.');
+
+  // Cria ou reativa profissional ADMIN para este e-mail na tenant
+  const { data: existing } = await supabase
+    .from('profissionais')
+    .select('id')
+    .eq('email', user.email)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from('profissionais')
+      .update({ ativo: true, perfil_acesso: 'ADMIN' })
+      .eq('id', existing.id);
+  } else {
+    // Deriva um nome legível a partir do e-mail
+    const nome = user.email
+      .split('@')[0]
+      .replace(/[._-]/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+    await supabase.from('profissionais').insert({
+      nome,
+      email: user.email,
+      perfil_acesso: 'ADMIN',
+      possui_agenda: false,
+      ativo: true,
+      tenant_id: tenantId,
+      criado_em: new Date().toISOString(),
+    });
+  }
+
+  // Seta cookie de contexto (8 h)
+  const cookieStore = await cookies();
+  cookieStore.set(SA_TENANT_COOKIE, tenantId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 8,
+  });
+
+  redirect('/agenda');
+}
+
+/**
+ * Encerra o modo de impersonação de tenant do super_admin.
+ * Limpa o cookie 'sa_tenant' e redireciona para o painel super-admin.
+ */
+export async function exitTenantMode(): Promise<void> {
+  const email = await getSessionEmail();
+  if (!email) redirect('/login');
+
+  const cookieStore = await cookies();
+  cookieStore.delete(SA_TENANT_COOKIE);
+
+  redirect('/super-admin/barbearias');
 }

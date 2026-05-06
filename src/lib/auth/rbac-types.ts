@@ -18,6 +18,11 @@ export interface CurrentUser {
   unidade_padrao?: string;
   /** UUID da tenant. undefined apenas para super_admin (acessa todas). */
   tenant_id?: string;
+  /**
+   * true quando um super_admin está operando dentro de uma tenant específica
+   * via cookie 'sa_tenant'. Permite mostrar banner de "modo impersonação".
+   */
+  is_super_admin_impersonating?: boolean;
 }
 
 export class AuthorizationError extends Error {
