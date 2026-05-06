@@ -1,6 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getCurrentUser, getSessionEmail } from '@/lib/auth/rbac';
 
+// Todas as rotas /super-admin/* são dinâmicas (usam cookies/auth).
+// Sem isso, o Next.js tenta pre-renderizar estaticamente e falha no build.
+export const dynamic = 'force-dynamic';
+
 export const metadata = { title: 'Super Admin — Barbudão SaaS' };
 
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
