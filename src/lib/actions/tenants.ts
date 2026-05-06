@@ -145,7 +145,10 @@ export async function createTenant(
     const tenantId: string = tenant.id;
 
     // 3. Cria unidades
+    // id_loja é NOT NULL na tabela — gera um ID único baseado em timestamp + índice
+    const baseId = Date.now();
     const unidadesPayload = input.unidades.map((u, i) => ({
+      id_loja: String(baseId + i),
       nome_fantasia: u.nome_fantasia,
       razao_social: u.nome_fantasia,
       telefone: u.telefone ?? null,
